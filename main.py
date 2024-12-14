@@ -81,55 +81,16 @@ class SifreYoneticisi:
             return False
 
     def kullanici_giris(self, kullanici_adi: str, sifre: str) -> bool:
-        try:
-            sorgu = "SELECT * FROM kullanicilar WHERE kullanici_adi = %s"
-            self.vt.imlec.execute(sorgu, (kullanici_adi,))
-            kullanici = self.vt.imlec.fetchone()
+        sonuc = self.vt.kullanici_dogrula(kullanici_adi, sifre)
+        if sonuc:
+            self.mevcut_kullanici = sonuc  # kullanıcı ID'si
+            print(f"Giriş yapıldı. Kullanıcı ID: {self.mevcut_kullanici}")  # Debug için
+            return True
+        return False
 
-            if not kullanici:
-                return False
-
-            if kullanici[7]:  # hesap_kilitli
-                kilit_bitis = kullanici[8]  # kilit_bitis_tarihi
-                if kilit_bitis and datetime.now() < kilit_bitis:
-                    kalan_sure = (kilit_bitis - datetime.now()).minutes
-                    print(f"Hesabınız kilitli. Kalan süre: {kalan_sure} dakika")
-                    return False
-
-            sifre_hash = hashlib.sha256(sifre.encode()).hexdigest()
-            if sifre_hash == kullanici[2]:  # sifre_hash
-                self.mevcut_kullanici = kullanici[0]  # kullanici_id
-                self.vt.imlec.execute("""
-                    UPDATE kullanicilar 
-                    SET basarisiz_giris_sayisi = 0, 
-                        hesap_kilitli = FALSE, 
-                        son_giris_tarihi = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                """, (self.mevcut_kullanici,))
-                self.vt.baglanti.commit()
-                return True
-            else:
-                yeni_deneme_sayisi = kullanici[6] + 1
-                if yeni_deneme_sayisi >= self.maksimum_giris_denemesi:
-                    kilit_bitis = datetime.now() + timedelta(minutes=self.kilit_suresi_dakika)
-                    self.vt.imlec.execute("""
-                        UPDATE kullanicilar 
-                        SET basarisiz_giris_sayisi = %s,
-                            hesap_kilitli = TRUE,
-                            kilit_bitis_tarihi = %s
-                        WHERE id = %s
-                    """, (yeni_deneme_sayisi, kilit_bitis, kullanici[0]))
-                else:
-                    self.vt.imlec.execute("""
-                        UPDATE kullanicilar 
-                        SET basarisiz_giris_sayisi = %s
-                        WHERE id = %s
-                    """, (yeni_deneme_sayisi, kullanici[0]))
-                self.vt.baglanti.commit()
-                return False
-        except Exception as e:
-            print(f"Giriş hatası: {e}")
-            return False
+    def kullanici_cikis(self):
+        self.mevcut_kullanici = None
+        self.vt.baglanti.commit()  # Bekleyen işlemleri kaydet
 
     def sifre_paylas(self, sifre_id: int, gecerlilik_suresi: int = 10) -> tuple:
         try:
@@ -204,37 +165,18 @@ class SifreYoneticisi:
             print(f"Şifre ekleme hatası: {e}")
             return False
 
-    def sifreleri_getir(self) -> list:
+    def sifreleri_getir(self):
+        if not self.mevcut_kullanici:
+            print("Aktif kullanıcı yok!")  # Debug için
+            return []
+        
+        # Bağlantıyı kontrol et
+        self.vt.baglanti_kontrol()
+        
         try:
-            sorgu = """
-            SELECT id, baslik, sifrelenmis_sifre, website, aciklama, son_guncelleme_tarihi
-            FROM sifreler
-            WHERE kullanici_id = %s
-            ORDER BY son_guncelleme_tarihi DESC
-            """
-            self.vt.imlec.execute(sorgu, (self.mevcut_kullanici,))
-            sifreler = self.vt.imlec.fetchall()
-            
-            sonuclar = []
-            for sifre in sifreler:
-                try:
-                    cozulmus_sifre = self.vt.sifre_coz(sifre[2])
-                    if cozulmus_sifre:
-                        sonuclar.append((
-                            sifre[0],  # id
-                            sifre[1],  # baslik
-                            cozulmus_sifre,  # sifre
-                            sifre[3],  # website
-                            sifre[4],  # aciklama
-                            sifre[5]   # tarih
-                        ))
-                except Exception as e:
-                    print(f"Şifre çözme hatası: {e}")
-                    continue
-            
-            return sonuclar
+            return self.vt.sifreleri_getir(self.mevcut_kullanici)
         except Exception as e:
-            print(f"Şifre getirme hatası: {e}")
+            print(f"Şifreleri getirme hatası: {e}")
             return []
 
     def sifre_guncelle(self, sifre_id: int, baslik: str, sifre: str, website: str, aciklama: str) -> bool:
@@ -255,10 +197,8 @@ class SifreYoneticisi:
 
     def sifre_sil(self, sifre_id: int) -> bool:
         try:
-            sorgu = "DELETE FROM sifreler WHERE id = %s AND kullanici_id = %s"
-            self.vt.imlec.execute(sorgu, (sifre_id, self.mevcut_kullanici))
-            self.vt.baglanti.commit()
-            return True
+            print(f"Şifre silme isteği: ID={sifre_id}, Kullanıcı={self.mevcut_kullanici}")
+            return self.vt.sifre_sil(sifre_id, self.mevcut_kullanici)
         except Exception as e:
             print(f"Şifre silme hatası: {e}")
             return False

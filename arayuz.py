@@ -533,8 +533,15 @@ class AnaEkran(QWidget):
         super().__init__()
         self.ana_pencere = ana_pencere
         self.init_ui()
-        self.sifreleri_yukle()
-    
+        
+        # Otomatik yenileme için timer ekle
+        self.yenileme_timer = QTimer()
+        self.yenileme_timer.timeout.connect(self.sifreleri_yukle)
+        self.yenileme_timer.start(5000)  # Her 5 saniyede bir yenile
+        
+        # İlk yüklemeyi yap
+        QTimer.singleShot(100, self.sifreleri_yukle)  # 100ms sonra ilk yüklemeyi yap
+
     def init_ui(self):
         duzen = QVBoxLayout()
         duzen.setSpacing(20)
@@ -670,13 +677,12 @@ class AnaEkran(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("""
             QScrollArea {
-                background-color: #1A1A1A;
-                border: 1px solid #00FF00;
-                border-radius: 8px;
+                background-color: #0A0A0A;
+                border: none;
             }
             QScrollBar:vertical {
                 border: 1px solid #00FF00;
-                background: #1A1A1A;
+                background: #0A0A0A;
                 width: 10px;
                 margin: 0px;
             }
@@ -701,52 +707,58 @@ class AnaEkran(QWidget):
         duzen.addWidget(scroll)
         
         self.setLayout(duzen)
-    
+
     def sifreleri_filtrele(self):
         aranan = self.arama_kutusu.text().lower()
         for i in range(self.kartlar_duzen.count()):
             item = self.kartlar_duzen.itemAt(i)
             if item.widget():
-                satir_gorunsun = False
-                for j in range(item.widget().layout().count()):
-                    sub_item = item.widget().layout().itemAt(j)
-                    if sub_item.widget():
-                        if aranan in sub_item.widget().text().lower():
-                            satir_gorunsun = True
-                            break
-                item.widget().layout().setRowHidden(0, not satir_gorunsun)
-    
+                widget = item.widget()
+                metin = ""
+                for j in range(widget.layout().count()):
+                    sub_item = widget.layout().itemAt(j)
+                    if isinstance(sub_item, QHBoxLayout):
+                        for k in range(sub_item.count()):
+                            widget_item = sub_item.itemAt(k).widget()
+                            if isinstance(widget_item, QLabel):
+                                metin += widget_item.text().lower() + " "
+                    elif sub_item.widget():
+                        metin += sub_item.widget().text().lower() + " "
+                widget.setVisible(aranan in metin)
+
     def sifreleri_yukle(self):
         # Mevcut kartları temizle
         while self.kartlar_duzen.count():
             item = self.kartlar_duzen.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        
+        # Kullanıcı ID'sini kontrol et
+        if not self.ana_pencere.yonetici.mevcut_kullanici:
+            print("Aktif kullanıcı yok!")
+            return
             
         sifreler = self.ana_pencere.yonetici.sifreleri_getir()
-        
-        # Şifreleri tarihe göre ters sırala (en yeni en üstte)
+        if not sifreler:
+            print("Şifre bulunamadı veya hata oluştu")
+            return
+            
         sifreler.sort(key=lambda x: x[5], reverse=True)
         
-        # Kartları oluştur
         for sifre in sifreler:
             # Her şifre için kart oluştur
             kart = QWidget()
             kart.setStyleSheet("""
                 QWidget {
-                    background-color: #1A1A1A;
-                    border: 1px solid #00FF00;
-                    border-radius: 8px;
+                    background: #1E1E1E;
+                    border: 1px solid #333333;
+                    border-radius: 12px;
                     padding: 15px;
                     margin: 5px;
                 }
                 QWidget:hover {
-                    background-color: #333333;
-                    border: 2px solid #00FF00;
-                }
-                QLabel {
-                    color: #00FF00;
-                    font-family: 'Consolas';
+                    background: #252525;
+                    border: 1px solid #404040;
                 }
             """)
             
@@ -759,9 +771,12 @@ class AnaEkran(QWidget):
             # Başlık
             baslik = QLabel(sifre[1])
             baslik.setStyleSheet("""
-                font-size: 16px;
+                font-size: 18px;
                 font-weight: bold;
+                color: #E0E0E0;
+                font-family: 'Consolas';
                 padding: 5px;
+                border-bottom: 1px solid #333333;
             """)
             ust_kisim.addWidget(baslik)
             
@@ -772,9 +787,9 @@ class AnaEkran(QWidget):
             # Buton stili
             buton_stili = """
                 QPushButton {
-                    background-color: #1A1A1A;
-                    border: 1px solid #00FF00;
-                    color: #00FF00;
+                    background-color: #252525;
+                    border: 1px solid #404040;
+                    color: #E0E0E0;
                     font-size: 16px;
                     padding: 5px;
                     border-radius: 15px;
@@ -782,12 +797,11 @@ class AnaEkran(QWidget):
                     min-height: 30px;
                 }
                 QPushButton:hover {
-                    background-color: #00FF00;
-                    color: #000000;
+                    background-color: #333333;
+                    border: 1px solid #505050;
                 }
                 QPushButton:pressed {
-                    background-color: #008800;
-                    color: #000000;
+                    background-color: #404040;
                 }
             """
             
@@ -800,9 +814,15 @@ class AnaEkran(QWidget):
             
             # Şifre alanı
             sifre_alani = QLabel("••••••••")
-            sifre_alani.setStyleSheet("font-size: 14px; padding: 5px;")
+            sifre_alani.setStyleSheet("""
+                font-size: 14px;
+                padding: 8px;
+                background-color: #252525;
+                border-radius: 6px;
+                color: #E0E0E0;
+                font-family: 'Consolas';
+            """)
             
-            # Closure kullanarak doğru bağlantıyı sağla
             def make_toggle_function(label, button, password):
                 def toggle():
                     if label.text() == "••••••••":
@@ -816,7 +836,7 @@ class AnaEkran(QWidget):
             toggle_func = make_toggle_function(sifre_alani, goster_buton, sifre[2])
             goster_buton.clicked.connect(toggle_func)
             
-            # Kopyala butonu
+            # Diğer butonlar...
             kopyala_buton = QPushButton("📋")
             kopyala_buton.setFixedSize(35, 35)
             kopyala_buton.setStyleSheet(buton_stili)
@@ -824,15 +844,14 @@ class AnaEkran(QWidget):
             kopyala_buton.setCursor(Qt.PointingHandCursor)
             kopyala_buton.clicked.connect(lambda: self.sifre_kopyala(sifre[2]))
             
-            # Düzenle butonu
             duzenle_buton = QPushButton("✏️")
             duzenle_buton.setFixedSize(35, 35)
             duzenle_buton.setStyleSheet(buton_stili)
             duzenle_buton.setToolTip("Şifreyi Düzenle")
             duzenle_buton.setCursor(Qt.PointingHandCursor)
-            duzenle_buton.clicked.connect(lambda: self.sifre_duzenle(sifre))
+            sifre_kopya = sifre  # Her döngüde yeni bir kopya oluştur
+            duzenle_buton.clicked.connect(lambda checked, s=sifre_kopya: self.sifre_duzenle(s))
             
-            # Paylaş butonu
             paylas_buton = QPushButton("🔗")
             paylas_buton.setFixedSize(35, 35)
             paylas_buton.setStyleSheet(buton_stili)
@@ -840,7 +859,6 @@ class AnaEkran(QWidget):
             paylas_buton.setCursor(Qt.PointingHandCursor)
             paylas_buton.clicked.connect(lambda: self.sifre_paylas(sifre[0]))
             
-            # Sil butonu
             sil_buton = QPushButton("🗑️")
             sil_buton.setFixedSize(35, 35)
             sil_buton.setStyleSheet(buton_stili)
@@ -856,24 +874,37 @@ class AnaEkran(QWidget):
             
             ust_kisim.addLayout(buton_grubu)
             kart_duzen.addLayout(ust_kisim)
-            
-            # Şifre alanını ekle
             kart_duzen.addWidget(sifre_alani)
             
             # Alt bilgiler
             if sifre[3]:  # Website
                 website = QLabel(f"🌐 {sifre[3]}")
-                website.setStyleSheet("font-size: 14px; padding: 2px;")
+                website.setStyleSheet("""
+                    font-size: 14px;
+                    padding: 4px;
+                    color: #B0B0B0;
+                    font-family: 'Consolas';
+                """)
                 kart_duzen.addWidget(website)
             
             if sifre[4]:  # Açıklama
                 aciklama = QLabel(f"📝 {sifre[4]}")
-                aciklama.setStyleSheet("font-size: 14px; padding: 2px;")
+                aciklama.setStyleSheet("""
+                    font-size: 14px;
+                    padding: 4px;
+                    color: #B0B0B0;
+                    font-family: 'Consolas';
+                """)
                 kart_duzen.addWidget(aciklama)
             
-            # Son güncelleme
+            # Tarih
             tarih = QLabel(f"🕒 Son güncelleme: {sifre[5]}")
-            tarih.setStyleSheet("color: #7F8C8D; font-size: 12px; padding: 2px;")
+            tarih.setStyleSheet("""
+                color: #808080;
+                font-size: 12px;
+                padding: 4px;
+                font-family: 'Consolas';
+            """)
             kart_duzen.addWidget(tarih)
             
             # Şifre güvenlik göstergesi
@@ -887,7 +918,7 @@ class AnaEkran(QWidget):
             guc_bar.setStyleSheet("""
                 QProgressBar {
                     border: none;
-                    background-color: #333333;
+                    background-color: #252525;
                     border-radius: 2px;
                 }
                 QProgressBar::chunk {
@@ -895,7 +926,6 @@ class AnaEkran(QWidget):
                 }
             """)
             
-            # Güç seviyesine göre renk ve değer ayarla
             guc_deger = {
                 "Zayıf": (33, "#E74C3C"),
                 "Orta": (66, "#F1C40F"),
@@ -914,41 +944,75 @@ class AnaEkran(QWidget):
                 color: {guc_deger[1]};
                 font-size: 12px;
                 padding: 2px;
+                font-family: 'Consolas';
             """)
             
             guc_duzen.addWidget(guc_label)
             guc_duzen.addWidget(guc_bar)
             guc_container.setLayout(guc_duzen)
             kart_duzen.addWidget(guc_container)
-
+            
             kart.setLayout(kart_duzen)
-            self.kartlar_duzen.insertWidget(0, kart)  # En üste ekle
+            self.kartlar_duzen.insertWidget(0, kart)
+        
+        # Ana ekranın arka plan rengini güncelle (hacker teması)
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #0A0A0A;
+                background-image: url('assets/matrix_bg.png');
+                background-repeat: repeat;
+            }
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                border: 1px solid #00FF00;
+                background: rgba(0, 0, 0, 0.5);
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #00FF00;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                border: none;
+                background: none;
+            }
+        """)
         
         # Boş alan ekle
         self.kartlar_duzen.addStretch()
     
-    def sifre_goster_gizle(self, label, sifre, buton):
-        if label.text() == "••••••••":
-            label.setText(sifre)
-            buton.setText("🔒")
-        else:
-            label.setText("••••••••")
-            buton.setText("👁️")
+    def sifre_sil(self, sifre_id):
+        yanit = QMessageBox.question(
+            self, "Şifre Sil",
+            "Bu şifreyi silmek istediğinizden emin misiniz?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if yanit == QMessageBox.Yes:
+            if self.ana_pencere.yonetici.sifre_sil(sifre_id):
+                self.sifreleri_yukle()
+            else:
+                QMessageBox.warning(self, "Hata", "Şifre silinemedi!")
     
-    def sifre_kopyala(self, sifre):
-        QApplication.clipboard().setText(sifre)
-        QMessageBox.information(self, "Başarılı", "Şifre panoya kopyalandı!")
-    
+    def cikis_yap(self):
+        self.yenileme_timer.stop()  # Timer'ı durdur
+        self.ana_pencere.yonetici.kullanici_cikis()  # Düzgün çıkış yap
+        self.ana_pencere.stacked_widget.setCurrentIndex(0)
+
     def yeni_sifre_ekle(self):
         dialog = SifreEkleDuzenleDialog(self.ana_pencere)
         if dialog.exec_() == QDialog.Accepted:
             self.sifreleri_yukle()
-    
+
     def sifre_duzenle(self, sifre_bilgisi):
         dialog = SifreEkleDuzenleDialog(self.ana_pencere, sifre_bilgisi)
         if dialog.exec_() == QDialog.Accepted:
             self.sifreleri_yukle()
-    
+
     def sifre_paylas(self, sifre_id):
         # Paylaşım süresi için dialog
         sure_dialog = QDialog(self)
@@ -960,7 +1024,7 @@ class AnaEkran(QWidget):
         # Açıklama
         aciklama = QLabel("Şifre paylaşımı için süre seçin:")
         aciklama.setStyleSheet("""
-            color: #00FF00;
+            color: #E0E0E0;
             font-family: 'Consolas';
             font-size: 14px;
             padding: 10px;
@@ -974,9 +1038,9 @@ class AnaEkran(QWidget):
         sure_secici.setSuffix(" dakika")
         sure_secici.setStyleSheet("""
             QSpinBox {
-                background-color: #1A1A1A;
-                color: #00FF00;
-                border: 1px solid #00FF00;
+                background-color: #252525;
+                color: #E0E0E0;
+                border: 1px solid #404040;
                 padding: 8px;
                 font-family: 'Consolas';
                 font-size: 14px;
@@ -992,15 +1056,15 @@ class AnaEkran(QWidget):
         
         buton_stili = """
             QPushButton {
-                background-color: #333333;
-                color: #00FF00;
-                border: 1px solid #00FF00;
+                background-color: #252525;
+                color: #E0E0E0;
+                border: 1px solid #404040;
                 padding: 8px 20px;
                 font-family: 'Consolas';
             }
             QPushButton:hover {
-                background-color: #00FF00;
-                color: #000000;
+                background-color: #333333;
+                border: 1px solid #505050;
             }
         """
         iptal_buton.setStyleSheet(buton_stili)
@@ -1016,8 +1080,8 @@ class AnaEkran(QWidget):
         sure_dialog.setLayout(duzen)
         sure_dialog.setStyleSheet("""
             QDialog {
-                background-color: #1A1A1A;
-                border: 1px solid #00FF00;
+                background-color: #1E1E1E;
+                border: 1px solid #404040;
             }
         """)
         
@@ -1035,7 +1099,7 @@ class AnaEkran(QWidget):
                 
                 # Bilgiler
                 bilgi_metni = f"""
-                <p style='color: #00FF00;'>
+                <p style='color: #E0E0E0;'>
                 <b>Paylaşım Kodu:</b><br>
                 {paylasim_kodu}<br><br>
                 <b>PIN Kodu:</b><br>
@@ -1048,12 +1112,12 @@ class AnaEkran(QWidget):
                 bilgi_label = QLabel(bilgi_metni)
                 bilgi_label.setStyleSheet("""
                     QLabel {
-                        background-color: #1A1A1A;
-                        color: #00FF00;
+                        background-color: #252525;
+                        color: #E0E0E0;
                         font-family: 'Consolas';
                         font-size: 14px;
                         padding: 20px;
-                        border: 1px solid #00FF00;
+                        border: 1px solid #404040;
                         border-radius: 5px;
                     }
                 """)
@@ -1078,30 +1142,14 @@ class AnaEkran(QWidget):
                 bilgi_dialog.setLayout(bilgi_duzen)
                 bilgi_dialog.setStyleSheet("""
                     QDialog {
-                        background-color: #1A1A1A;
-                        border: 1px solid #00FF00;
+                        background-color: #1E1E1E;
+                        border: 1px solid #404040;
                     }
                 """)
                 
                 bilgi_dialog.exec_()
             else:
                 QMessageBox.warning(self, "Hata", "Paylaşım oluşturulamadı!")
-    
-    def sifre_sil(self, sifre_id):
-        yanit = QMessageBox.question(
-            self, "Şifre Sil",
-            "Bu şifreyi silmek istediğinizden emin misiniz?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if yanit == QMessageBox.Yes:
-            if self.ana_pencere.yonetici.sifre_sil(sifre_id):
-                self.sifreleri_yukle()
-            else:
-                QMessageBox.warning(self, "Hata", "Şifre silinemedi!")
-    
-    def cikis_yap(self):
-        self.ana_pencere.stacked_widget.setCurrentIndex(0)
-        self.ana_pencere.yonetici.mevcut_kullanici = None
 
 class AnaPencere(QMainWindow):
     def __init__(self):
@@ -1266,6 +1314,7 @@ class AnaPencere(QMainWindow):
         if not hasattr(self, 'ana_ekran'):
             self.ana_ekran = AnaEkran(self)
             self.stacked_widget.addWidget(self.ana_ekran)
+        self.ana_ekran.sifreleri_yukle()  # Ekranı göstermeden önce şifreleri yükle
         self.stacked_widget.setCurrentWidget(self.ana_ekran)
 
 def main():

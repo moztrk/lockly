@@ -3,6 +3,7 @@ from psycopg2 import Error
 from cryptography.fernet import Fernet
 import os
 from datetime import datetime, timedelta
+import hashlib
 
 class VeritabaniYoneticisi:
     def __init__(self):
@@ -109,3 +110,82 @@ class VeritabaniYoneticisi:
             self.imlec.close()
         if self.baglanti:
             self.baglanti.close()
+
+    def sifreleri_getir(self, kullanici_id):
+        try:
+            self.imlec.execute("""
+                SELECT id, baslik, sifrelenmis_sifre, website, aciklama, son_guncelleme_tarihi 
+                FROM sifreler 
+                WHERE kullanici_id = %s
+                ORDER BY son_guncelleme_tarihi DESC
+            """, (kullanici_id,))
+            sifreler = self.imlec.fetchall()
+            
+            sonuclar = []
+            for sifre in sifreler:
+                try:
+                    cozulmus_sifre = self.sifre_coz(sifre[2])
+                    if cozulmus_sifre:
+                        sonuclar.append((
+                            sifre[0],  # id
+                            sifre[1],  # baslik
+                            cozulmus_sifre,  # sifre
+                            sifre[3],  # website
+                            sifre[4],  # aciklama
+                            sifre[5]   # tarih
+                        ))
+                except Exception as e:
+                    print(f"Şifre çözme hatası: {e}")
+                    continue
+            
+            return sonuclar
+        except psycopg2.Error as e:
+            print(f"Şifreler getirilirken hata oluştu: {e}")
+            return []
+
+    def kullanici_dogrula(self, kullanici_adi, sifre):
+        try:
+            sifre_hash = hashlib.sha256(sifre.encode()).hexdigest()
+            self.imlec.execute("""
+                SELECT id FROM kullanicilar 
+                WHERE kullanici_adi = %s AND sifre_hash = %s
+            """, (kullanici_adi, sifre_hash))
+            sonuc = self.imlec.fetchone()
+            return sonuc[0] if sonuc else None  # Kullanıcı ID'sini döndür
+        except psycopg2.Error as e:
+            print(f"Kullanıcı doğrulama hatası: {e}")
+            return None
+
+    def sifre_sil(self, sifre_id, kullanici_id):
+        try:
+            # Önce şifrenin bu kullanıcıya ait olduğunu kontrol et
+            self.imlec.execute("""
+                DELETE FROM paylasim_baglantilari 
+                WHERE sifre_id = %s
+            """, (sifre_id,))
+
+            self.imlec.execute("""
+                DELETE FROM sifreler 
+                WHERE id = %s AND kullanici_id = %s
+            """, (sifre_id, kullanici_id))
+            
+            # Etkilenen satır sayısını kontrol et
+            etkilenen = self.imlec.rowcount
+            self.baglanti.commit()
+            
+            print(f"Silme işlemi: Şifre ID={sifre_id}, Kullanıcı ID={kullanici_id}, Başarılı={etkilenen>0}")
+            return etkilenen > 0
+            
+        except psycopg2.Error as e:
+            print(f"Şifre silme hatası: {e}")
+            self.baglanti.rollback()
+            return False
+
+    def baglanti_kontrol(self):
+        """Veritabanı bağlantısını kontrol eder ve gerekirse yeniler"""
+        try:
+            # Bağlantıyı test et
+            self.imlec.execute("SELECT 1")
+        except (psycopg2.Error, psycopg2.OperationalError):
+            # Bağlantı kopmuşsa yeniden bağlan
+            self.baglan()
