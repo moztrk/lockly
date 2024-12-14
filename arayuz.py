@@ -742,6 +742,7 @@ class AnaEkran(QWidget):
                 }
                 QWidget:hover {
                     background-color: #333333;
+                    border: 2px solid #00FF00;
                 }
                 QLabel {
                     color: #00FF00;
@@ -768,21 +769,34 @@ class AnaEkran(QWidget):
             buton_grubu = QHBoxLayout()
             buton_grubu.setSpacing(5)
             
-            # Göster/Gizle butonu
-            goster_buton = QPushButton("👁️")
-            goster_buton.setFixedSize(30, 30)
-            goster_buton.setStyleSheet("""
+            # Buton stili
+            buton_stili = """
                 QPushButton {
-                    background-color: transparent;
-                    border: none;
+                    background-color: #1A1A1A;
+                    border: 1px solid #00FF00;
                     color: #00FF00;
                     font-size: 16px;
+                    padding: 5px;
+                    border-radius: 15px;
+                    min-width: 30px;
+                    min-height: 30px;
                 }
                 QPushButton:hover {
-                    background-color: rgba(0, 255, 0, 0.1);
-                    border-radius: 15px;
+                    background-color: #00FF00;
+                    color: #000000;
                 }
-            """)
+                QPushButton:pressed {
+                    background-color: #008800;
+                    color: #000000;
+                }
+            """
+            
+            # Göster/Gizle butonu
+            goster_buton = QPushButton("👁️")
+            goster_buton.setFixedSize(35, 35)
+            goster_buton.setStyleSheet(buton_stili)
+            goster_buton.setToolTip("Şifreyi Göster/Gizle")
+            goster_buton.setCursor(Qt.PointingHandCursor)
             
             # Şifre alanı
             sifre_alani = QLabel("••••••••")
@@ -804,25 +818,40 @@ class AnaEkran(QWidget):
             
             # Kopyala butonu
             kopyala_buton = QPushButton("📋")
-            kopyala_buton.setFixedSize(30, 30)
-            kopyala_buton.setStyleSheet(goster_buton.styleSheet())
+            kopyala_buton.setFixedSize(35, 35)
+            kopyala_buton.setStyleSheet(buton_stili)
+            kopyala_buton.setToolTip("Şifreyi Panoya Kopyala")
+            kopyala_buton.setCursor(Qt.PointingHandCursor)
             kopyala_buton.clicked.connect(lambda: self.sifre_kopyala(sifre[2]))
             
             # Düzenle butonu
             duzenle_buton = QPushButton("✏️")
-            duzenle_buton.setFixedSize(30, 30)
-            duzenle_buton.setStyleSheet(goster_buton.styleSheet())
+            duzenle_buton.setFixedSize(35, 35)
+            duzenle_buton.setStyleSheet(buton_stili)
+            duzenle_buton.setToolTip("Şifreyi Düzenle")
+            duzenle_buton.setCursor(Qt.PointingHandCursor)
             duzenle_buton.clicked.connect(lambda: self.sifre_duzenle(sifre))
+            
+            # Paylaş butonu
+            paylas_buton = QPushButton("🔗")
+            paylas_buton.setFixedSize(35, 35)
+            paylas_buton.setStyleSheet(buton_stili)
+            paylas_buton.setToolTip("Şifreyi Paylaş")
+            paylas_buton.setCursor(Qt.PointingHandCursor)
+            paylas_buton.clicked.connect(lambda: self.sifre_paylas(sifre[0]))
             
             # Sil butonu
             sil_buton = QPushButton("🗑️")
-            sil_buton.setFixedSize(30, 30)
-            sil_buton.setStyleSheet(goster_buton.styleSheet())
+            sil_buton.setFixedSize(35, 35)
+            sil_buton.setStyleSheet(buton_stili)
+            sil_buton.setToolTip("Şifreyi Sil")
+            sil_buton.setCursor(Qt.PointingHandCursor)
             sil_buton.clicked.connect(lambda: self.sifre_sil(sifre[0]))
             
             buton_grubu.addWidget(goster_buton)
             buton_grubu.addWidget(kopyala_buton)
             buton_grubu.addWidget(duzenle_buton)
+            buton_grubu.addWidget(paylas_buton)
             buton_grubu.addWidget(sil_buton)
             
             ust_kisim.addLayout(buton_grubu)
@@ -892,22 +921,6 @@ class AnaEkran(QWidget):
             guc_container.setLayout(guc_duzen)
             kart_duzen.addWidget(guc_container)
 
-            # Animasyonlu arka plan için QPropertyAnimation
-            self.animation = QPropertyAnimation(kart, b"pos")
-            self.animation.setDuration(1000)  # 1 saniye
-            self.animation.setLoopCount(-1)  # Sonsuz döngü
-            
-            # Başlangıç ve bitiş pozisyonları
-            start_pos = kart.pos()
-            end_pos = QPoint(start_pos.x(), start_pos.y() - 5)  # 5 piksel yukarı
-            
-            self.animation.setStartValue(start_pos)
-            self.animation.setEndValue(end_pos)
-            self.animation.setEasingCurve(QEasingCurve.InOutQuad)
-            
-            # Animasyonu başlat
-            self.animation.start()
-
             kart.setLayout(kart_duzen)
             self.kartlar_duzen.insertWidget(0, kart)  # En üste ekle
         
@@ -937,20 +950,140 @@ class AnaEkran(QWidget):
             self.sifreleri_yukle()
     
     def sifre_paylas(self, sifre_id):
-        sure, ok = QInputDialog.getInt(
-            self, "Paylaşım Süresi",
-            "Paylaşım süresi (dakika):",
-            10, 1, 60
-        )
-        if ok:
+        # Paylaşım süresi için dialog
+        sure_dialog = QDialog(self)
+        sure_dialog.setWindowTitle("Şifre Paylaş")
+        sure_dialog.setFixedWidth(400)
+        
+        duzen = QVBoxLayout()
+        
+        # Açıklama
+        aciklama = QLabel("Şifre paylaşımı için süre seçin:")
+        aciklama.setStyleSheet("""
+            color: #00FF00;
+            font-family: 'Consolas';
+            font-size: 14px;
+            padding: 10px;
+        """)
+        duzen.addWidget(aciklama)
+        
+        # Süre seçici
+        sure_secici = QSpinBox()
+        sure_secici.setRange(1, 60)
+        sure_secici.setValue(10)
+        sure_secici.setSuffix(" dakika")
+        sure_secici.setStyleSheet("""
+            QSpinBox {
+                background-color: #1A1A1A;
+                color: #00FF00;
+                border: 1px solid #00FF00;
+                padding: 8px;
+                font-family: 'Consolas';
+                font-size: 14px;
+            }
+        """)
+        duzen.addWidget(sure_secici)
+        
+        # Butonlar
+        buton_duzen = QHBoxLayout()
+        
+        iptal_buton = QPushButton("İptal")
+        onayla_buton = QPushButton("Paylaş")
+        
+        buton_stili = """
+            QPushButton {
+                background-color: #333333;
+                color: #00FF00;
+                border: 1px solid #00FF00;
+                padding: 8px 20px;
+                font-family: 'Consolas';
+            }
+            QPushButton:hover {
+                background-color: #00FF00;
+                color: #000000;
+            }
+        """
+        iptal_buton.setStyleSheet(buton_stili)
+        onayla_buton.setStyleSheet(buton_stili)
+        
+        iptal_buton.clicked.connect(sure_dialog.reject)
+        onayla_buton.clicked.connect(sure_dialog.accept)
+        
+        buton_duzen.addWidget(iptal_buton)
+        buton_duzen.addWidget(onayla_buton)
+        duzen.addLayout(buton_duzen)
+        
+        sure_dialog.setLayout(duzen)
+        sure_dialog.setStyleSheet("""
+            QDialog {
+                background-color: #1A1A1A;
+                border: 1px solid #00FF00;
+            }
+        """)
+        
+        if sure_dialog.exec_() == QDialog.Accepted:
+            sure = sure_secici.value()
             paylasim_kodu, pin_kodu = self.ana_pencere.yonetici.sifre_paylas(sifre_id, sure)
+            
             if paylasim_kodu and pin_kodu:
-                QMessageBox.information(
-                    self, "Paylaşım Bilgileri",
-                    f"Paylaşım Kodu: {paylasim_kodu}\nPIN Kodu: {pin_kodu}\n\n"
-                    f"Bu bilgileri güvenli bir şekilde paylaşın.\n"
-                    f"Paylaşım {sure} dakika boyunca geçerli olacaktır."
-                )
+                # Paylaşım bilgileri için dialog
+                bilgi_dialog = QDialog(self)
+                bilgi_dialog.setWindowTitle("Paylaşım Bilgileri")
+                bilgi_dialog.setFixedWidth(500)
+                
+                bilgi_duzen = QVBoxLayout()
+                
+                # Bilgiler
+                bilgi_metni = f"""
+                <p style='color: #00FF00;'>
+                <b>Paylaşım Kodu:</b><br>
+                {paylasim_kodu}<br><br>
+                <b>PIN Kodu:</b><br>
+                {pin_kodu}<br><br>
+                <b>Geçerlilik Süresi:</b><br>
+                {sure} dakika
+                </p>
+                """
+                
+                bilgi_label = QLabel(bilgi_metni)
+                bilgi_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #1A1A1A;
+                        color: #00FF00;
+                        font-family: 'Consolas';
+                        font-size: 14px;
+                        padding: 20px;
+                        border: 1px solid #00FF00;
+                        border-radius: 5px;
+                    }
+                """)
+                bilgi_duzen.addWidget(bilgi_label)
+                
+                # Kopyala butonu
+                kopyala_buton = QPushButton("Bilgileri Kopyala")
+                kopyala_buton.setStyleSheet(buton_stili)
+                kopyala_buton.clicked.connect(lambda: QApplication.clipboard().setText(
+                    f"Paylaşım Kodu: {paylasim_kodu}\n"
+                    f"PIN Kodu: {pin_kodu}\n"
+                    f"Geçerlilik Süresi: {sure} dakika"
+                ))
+                bilgi_duzen.addWidget(kopyala_buton)
+                
+                # Kapat butonu
+                kapat_buton = QPushButton("Kapat")
+                kapat_buton.setStyleSheet(buton_stili)
+                kapat_buton.clicked.connect(bilgi_dialog.close)
+                bilgi_duzen.addWidget(kapat_buton)
+                
+                bilgi_dialog.setLayout(bilgi_duzen)
+                bilgi_dialog.setStyleSheet("""
+                    QDialog {
+                        background-color: #1A1A1A;
+                        border: 1px solid #00FF00;
+                    }
+                """)
+                
+                bilgi_dialog.exec_()
             else:
                 QMessageBox.warning(self, "Hata", "Paylaşım oluşturulamadı!")
     
