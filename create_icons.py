@@ -84,11 +84,50 @@ def create_window_icon():
     
     img.save('assets/lock_icon.png')
 
+def create_sun_icon():
+    # Güneş ikonu oluştur
+    size = (64, 64)
+    image = Image.new('RGBA', size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    # Ana daire (güneş)
+    center = (32, 32)
+    radius = 15
+    draw.ellipse([center[0]-radius, center[1]-radius, 
+                  center[0]+radius, center[1]+radius], 
+                 fill=(255, 200, 0, 255))
+    
+    # Işınlar
+    ray_length = 10
+    ray_positions = [(32, 5), (50, 14), (59, 32), (50, 50),
+                     (32, 59), (14, 50), (5, 32), (14, 14)]
+    
+    for pos in ray_positions:
+        draw.line([center, pos], fill=(255, 200, 0, 255), width=3)
+    
+    image.save('assets/sun.png')
+
+def create_moon_icon():
+    # Ay ikonu oluştur
+    size = (64, 64)
+    image = Image.new('RGBA', size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    # Dış daire (ay)
+    draw.ellipse([10, 10, 54, 54], fill=(200, 200, 255, 255))
+    
+    # İç daire (gölge)
+    draw.ellipse([20, 10, 64, 54], fill=(0, 0, 0, 0))
+    
+    image.save('assets/moon.png')
+
 def main():
     create_directory()
     create_lockly_logo()
     create_window_icon()
     create_action_icons()
+    create_sun_icon()
+    create_moon_icon()
 
 if __name__ == '__main__':
     main() 
