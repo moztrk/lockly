@@ -4,6 +4,10 @@ from cryptography.fernet import Fernet
 import os
 from datetime import datetime, timedelta
 import hashlib
+import random
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 class VeritabaniYoneticisi:
     def __init__(self):
@@ -79,6 +83,36 @@ class VeritabaniYoneticisi:
                 son_kullanma_tarihi TIMESTAMP NOT NULL,
                 kullanildi BOOLEAN DEFAULT FALSE
             )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS guvenlik_sorulari (
+                id SERIAL PRIMARY KEY,
+                kullanici_id INTEGER REFERENCES kullanicilar(id),
+                soru_1 VARCHAR(255) NOT NULL,
+                cevap_1 VARCHAR(255) NOT NULL,
+                soru_2 VARCHAR(255) NOT NULL,
+                cevap_2 VARCHAR(255) NOT NULL,
+                soru_3 VARCHAR(255) NOT NULL,
+                cevap_3 VARCHAR(255) NOT NULL,
+                soru_4 VARCHAR(255) NOT NULL,
+                cevap_4 VARCHAR(255) NOT NULL,
+                soru_5 VARCHAR(255) NOT NULL,
+                cevap_5 VARCHAR(255) NOT NULL,
+                kritik_sorular INTEGER[] NOT NULL  -- Kritik soruların indeksleri [1,2,4] gibi
+            )
+            """,
+            """
+            ALTER TABLE kullanicilar 
+            ADD COLUMN IF NOT EXISTS sifirlama_kodu VARCHAR(6),
+            ADD COLUMN IF NOT EXISTS sifirlama_kodu_son_kullanma TIMESTAMP
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS dogrulama_kodlari (
+                id SERIAL PRIMARY KEY,
+                kullanici_adi TEXT NOT NULL,
+                kod TEXT NOT NULL,
+                olusturma_zamani TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
             """
         ]
         
@@ -113,12 +147,14 @@ class VeritabaniYoneticisi:
 
     def sifreleri_getir(self, kullanici_id):
         try:
+            # Sadece giriş yapan kullanıcının şifrelerini getir
             self.imlec.execute("""
                 SELECT id, baslik, sifrelenmis_sifre, website, aciklama, son_guncelleme_tarihi 
                 FROM sifreler 
                 WHERE kullanici_id = %s
                 ORDER BY son_guncelleme_tarihi DESC
             """, (kullanici_id,))
+            
             sifreler = self.imlec.fetchall()
             
             sonuclar = []
@@ -145,14 +181,39 @@ class VeritabaniYoneticisi:
 
     def kullanici_dogrula(self, kullanici_adi, sifre):
         try:
+            # Bağlantıyı kontrol et
+            self.baglanti_kontrol()
+            
             sifre_hash = hashlib.sha256(sifre.encode()).hexdigest()
+            
+            # Debug için yazdırma
+            print(f"Doğrulama deneniyor - Kullanıcı: {kullanici_adi}")
+            
             self.imlec.execute("""
-                SELECT id FROM kullanicilar 
-                WHERE kullanici_adi = %s AND sifre_hash = %s
-            """, (kullanici_adi, sifre_hash))
+                SELECT id, kullanici_adi, sifre_hash FROM kullanicilar 
+                WHERE kullanici_adi = %s
+            """, (kullanici_adi,))
+            
             sonuc = self.imlec.fetchone()
-            return sonuc[0] if sonuc else None  # Kullanıcı ID'sini döndür
-        except psycopg2.Error as e:
+            
+            if sonuc:
+                print(f"Kullanıcı bulundu - ID: {sonuc[0]}")
+                print(f"Hash karşılaştırması: {sifre_hash == sonuc[2]}")
+                
+                if sifre_hash == sonuc[2]:
+                    # Başarılı giriş
+                    self.imlec.execute("""
+                        UPDATE kullanicilar 
+                        SET son_giris_tarihi = CURRENT_TIMESTAMP,
+                            basarisiz_giris_sayisi = 0
+                        WHERE id = %s
+                    """, (sonuc[0],))
+                    self.baglanti.commit()
+                    return sonuc[0]  # Kullanıcı ID'sini döndür
+            
+            return None
+            
+        except Exception as e:
             print(f"Kullanıcı doğrulama hatası: {e}")
             return None
 
@@ -189,3 +250,87 @@ class VeritabaniYoneticisi:
         except (psycopg2.Error, psycopg2.OperationalError):
             # Bağlantı kopmuşsa yeniden bağlan
             self.baglan()
+
+    def kullanici_eposta_getir(self, kullanici_adi):
+        """Kullanıcı adına ait e-posta adresini getir"""
+        try:
+            sorgu = "SELECT email FROM kullanicilar WHERE kullanici_adi = %s"
+            self.imlec.execute(sorgu, (kullanici_adi,))
+            sonuc = self.imlec.fetchone()
+            return sonuc[0] if sonuc else None
+        except Exception as e:
+            print(f"Hata: {e}")
+            return None
+
+    def dogrulama_kodu_olustur(self, kullanici_adi):
+        """6 haneli doğrulama kodu oluştur ve sakla"""
+        kod = ''.join(random.choices('0123456789', k=6))
+        try:
+            # Önceki kodları temizle
+            self.imlec.execute("DELETE FROM dogrulama_kodlari WHERE kullanici_adi = %s", 
+                              (kullanici_adi,))
+            
+            # Yeni kodu kaydet
+            self.imlec.execute("""
+                INSERT INTO dogrulama_kodlari (kullanici_adi, kod, olusturma_zamani) 
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+            """, (kullanici_adi, kod))
+            self.baglanti.commit()
+            return kod
+        except Exception as e:
+            print(f"Hata: {e}")
+            return None
+
+    def dogrulama_kodu_gonder(self, email, kod):
+        """E-posta ile doğrulama kodunu gönder"""
+        # E-posta ayarları
+        smtp_ayarlari = {
+            'sunucu': 'smtp.gmail.com',
+            'port': 587,
+            'email': 'mustafa44fbfb@gmail.com',  # Gmail adresiniz
+            'sifre': 'mcwt szgs kefs jznq'  # Gmail uygulama şifreniz
+        }
+        
+        # E-posta içeriği
+        message = MIMEMultipart()
+        message["From"] = smtp_ayarlari['email']
+        message["To"] = email
+        message["Subject"] = "Lockly - Şifre Sıfırlama Kodu"
+        
+        body = f"""
+        Merhaba,
+        
+        Şifre sıfırlama talebiniz için doğrulama kodunuz: {kod}
+        
+        Bu kodu kimseyle paylaşmayın.
+        
+        Saygılarımızla,
+        Lockly Ekibi
+        """
+        
+        message.attach(MIMEText(body, "plain"))
+        
+        # E-postayı gönder
+        try:
+            server = smtplib.SMTP(smtp_ayarlari['sunucu'], smtp_ayarlari['port'])
+            server.starttls()
+            server.login(smtp_ayarlari['email'], smtp_ayarlari['sifre'])
+            server.send_message(message)
+            server.quit()
+        except Exception as e:
+            raise Exception(f"E-posta gönderilemedi: {str(e)}")
+
+    def dogrulama_kodu_kontrol_et(self, kullanici_adi, kod):
+        """Doğrulama kodunu kontrol et"""
+        try:
+            self.imlec.execute("""
+                SELECT 1 FROM dogrulama_kodlari 
+                WHERE kullanici_adi = %s 
+                AND kod = %s 
+                AND olusturma_zamani > NOW() - INTERVAL '15 minutes'
+            """, (kullanici_adi, kod))
+            
+            return bool(self.imlec.fetchone())
+        except Exception as e:
+            print(f"Kod kontrol hatası: {e}")
+            return False

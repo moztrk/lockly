@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QLabel, QLineEdit, 
                            QStackedWidget, QMessageBox, QDialog, QScrollArea, 
-                           QProgressBar)
+                           QProgressBar, QDesktopWidget, QCheckBox)
 from PyQt5.QtCore import Qt, QTimer, QSize, QPoint
 from PyQt5.QtGui import QColor, QIcon, QFont, QPainter, QPalette
 import sys
@@ -9,6 +9,7 @@ from datetime import datetime
 from veritabani import VeritabaniYoneticisi
 from main import SifreYoneticisi
 import random
+import re
 
 class MatrixRain(QWidget):
     def __init__(self, parent=None):
@@ -255,6 +256,31 @@ class GirisPenceresi(QWidget):
                 background-color: transparent;
             }
         """)
+        
+        # Şifremi Unuttum butonu
+        sifremi_unuttum = QPushButton("Şifremi Unuttum")
+        sifremi_unuttum.setCursor(Qt.PointingHandCursor)
+        sifremi_unuttum.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #4A90E2;
+                font-size: 13px;
+                text-decoration: underline;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                color: #357ABD;
+            }
+        """)
+        sifremi_unuttum.clicked.connect(self.sifremi_unuttum_dialog)
+        
+        # Butonları düzene ekle
+        buton_duzen.addWidget(sifremi_unuttum)
+        
+    def sifremi_unuttum_dialog(self):
+        dialog = SifreSifirlama(self.ana_pencere)
+        dialog.exec_()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -436,40 +462,51 @@ class KayitPenceresi(QWidget):
         self.ana_pencere = ana_pencere
         self.init_ui()
 
+    def sifre_gucunu_goster(self):
+        """Şifre gücünü değerlendir ve göster"""
+        sifre = self.sifre.text()
+        if not sifre:
+            self.guc_etiketi.clear()
+            return
+            
+        guc, geri_bildirim = self.ana_pencere.yonetici.sifre_gucunu_degerlendir(sifre)
+        
+        if guc == "Güçlü":
+            renk = "#2ECC71"  # Yeşil
+        elif guc == "Orta":
+            renk = "#F1C40F"  # Sarı
+        else:
+            renk = "#E74C3C"  # Kırmızı
+            
+        self.guc_etiketi.setStyleSheet(f"color: {renk};")
+        self.guc_etiketi.setText(f"Şifre Gücü: {guc}\n" + "\n".join(geri_bildirim))
+
     def init_ui(self):
         duzen = QVBoxLayout()
         duzen.setSpacing(20)
         duzen.setContentsMargins(50, 50, 50, 50)
         
-        # Container widget
-        self.container = QWidget()
-        self.container.setStyleSheet("""
+        # Logo ve başlık
+        logo_label = QLabel()
+        logo_pixmap = QIcon("assets/lockly_logo.png").pixmap(QSize(100, 100))
+        logo_label.setPixmap(logo_pixmap)
+        logo_label.setAlignment(Qt.AlignCenter)
+        duzen.addWidget(logo_label)
+        
+        baslik = QLabel("Yeni Hesap Oluştur")
+        baslik.setFont(QFont('Segoe UI', 28, QFont.Bold))
+        baslik.setAlignment(Qt.AlignCenter)
+        baslik.setStyleSheet("color: #FFFFFF;")
+        duzen.addWidget(baslik)
+        
+        # Form container
+        form_container = QWidget()
+        form_container.setStyleSheet("""
             QWidget {
                 background-color: rgba(25, 25, 35, 0.95);
-                border: none;
                 border-radius: 15px;
                 padding: 20px;
             }
-        """)
-        container_duzen = QVBoxLayout()
-        
-        # Logo ve başlık
-        logo_label = QLabel()
-        logo_pixmap = QIcon("assets/lockly_logo.png").pixmap(QSize(80, 80))
-        logo_label.setPixmap(logo_pixmap)
-        logo_label.setAlignment(Qt.AlignCenter)
-        container_duzen.addWidget(logo_label)
-        
-        self.baslik = QLabel("Yeni Hesap Oluştur")
-        self.baslik.setFont(QFont('Segoe UI', 28, QFont.Bold))
-        self.baslik.setAlignment(Qt.AlignCenter)
-        self.baslik.setStyleSheet("color: #FFFFFF;")
-        container_duzen.addWidget(self.baslik)
-        
-        container_duzen.addSpacing(30)
-        
-        # Input stil tanımı
-        input_style = """
             QLineEdit {
                 background-color: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(255, 255, 255, 0.1);
@@ -480,77 +517,9 @@ class KayitPenceresi(QWidget):
                 font-size: 14px;
             }
             QLineEdit:focus {
-                border: 1px solid rgba(255, 255, 255, 0.3);
+                border: 1px solid #4A90E2;
                 background-color: rgba(255, 255, 255, 0.08);
             }
-            QLineEdit::placeholder {
-                color: rgba(255, 255, 255, 0.3);
-            }
-        """
-        
-        # Form alanları
-        self.kullanici_adi = QLineEdit()
-        self.kullanici_adi.setPlaceholderText("Kullanıcı Adı")
-        self.kullanici_adi.setMinimumHeight(45)
-        self.kullanici_adi.setStyleSheet(input_style)
-        
-        self.email = QLineEdit()
-        self.email.setPlaceholderText("E-posta")
-        self.email.setMinimumHeight(45)
-        self.email.setStyleSheet(input_style)
-        
-        self.sifre = QLineEdit()
-        self.sifre.setPlaceholderText("Şifre")
-        self.sifre.setEchoMode(QLineEdit.Password)
-        self.sifre.setMinimumHeight(45)
-        self.sifre.setStyleSheet(input_style)
-        
-        self.sifre_tekrar = QLineEdit()
-        self.sifre_tekrar.setPlaceholderText("Şifre Tekrar")
-        self.sifre_tekrar.setEchoMode(QLineEdit.Password)
-        self.sifre_tekrar.setMinimumHeight(45)
-        self.sifre_tekrar.setStyleSheet(input_style)
-        
-        # Şifre gücü göstergesi
-        self.guc_etiketi = QLabel()
-        self.guc_etiketi.setAlignment(Qt.AlignCenter)
-        self.guc_etiketi.setStyleSheet("""
-            color: rgba(255, 255, 255, 0.7);
-            font-family: 'Segoe UI';
-            font-size: 13px;
-        """)
-        
-        self.sifre.textChanged.connect(self.sifre_gucunu_goster)
-        
-        # Butonlar
-        buton_duzen = QHBoxLayout()
-        buton_duzen.setSpacing(15)
-        
-        self.geri_butonu = QPushButton("Geri")
-        self.geri_butonu.setMinimumHeight(45)
-        self.geri_butonu.setCursor(Qt.PointingHandCursor)
-        self.geri_butonu.clicked.connect(lambda: self.ana_pencere.stacked_widget.setCurrentIndex(0))
-        self.geri_butonu.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 8px;
-                color: white;
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 12px 24px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.1);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-            }
-        """)
-        
-        self.kayit_butonu = QPushButton("Kayıt Ol")
-        self.kayit_butonu.setMinimumHeight(45)
-        self.kayit_butonu.setCursor(Qt.PointingHandCursor)
-        self.kayit_butonu.clicked.connect(self.kayit_ol)
-        self.kayit_butonu.setStyleSheet("""
             QPushButton {
                 background-color: #4A90E2;
                 border: none;
@@ -566,56 +535,104 @@ class KayitPenceresi(QWidget):
             QPushButton:pressed {
                 background-color: #2868B0;
             }
+            QLabel {
+                color: white;
+                font-family: 'Segoe UI';
+            }
         """)
+        form_duzen = QVBoxLayout(form_container)
+        form_duzen.setSpacing(15)
+        
+        # Form alanları
+        self.kullanici_adi = QLineEdit()
+        self.kullanici_adi.setPlaceholderText("Kullanıcı Adı")
+        self.kullanici_adi.setMinimumHeight(45)
+        
+        self.email = QLineEdit()
+        self.email.setPlaceholderText("E-posta")
+        self.email.setMinimumHeight(45)
+        
+        self.sifre = QLineEdit()
+        self.sifre.setPlaceholderText("Şifre")
+        self.sifre.setEchoMode(QLineEdit.Password)
+        self.sifre.setMinimumHeight(45)
+        self.sifre.textChanged.connect(self.sifre_gucunu_goster)
+        
+        self.sifre_tekrar = QLineEdit()
+        self.sifre_tekrar.setPlaceholderText("Şifre Tekrar")
+        self.sifre_tekrar.setEchoMode(QLineEdit.Password)
+        self.sifre_tekrar.setMinimumHeight(45)
+        
+        self.guc_etiketi = QLabel()
+        self.guc_etiketi.setAlignment(Qt.AlignCenter)
+        
+        form_duzen.addWidget(self.kullanici_adi)
+        form_duzen.addWidget(self.email)
+        form_duzen.addWidget(self.sifre)
+        form_duzen.addWidget(self.sifre_tekrar)
+        form_duzen.addWidget(self.guc_etiketi)
+        
+        # Butonlar
+        buton_duzen = QHBoxLayout()
+        
+        self.geri_butonu = QPushButton("Geri")
+        self.geri_butonu.setMinimumHeight(45)
+        self.geri_butonu.clicked.connect(lambda: self.ana_pencere.stacked_widget.setCurrentIndex(0))
+        
+        self.kayit_butonu = QPushButton("Kayıt Ol")
+        self.kayit_butonu.setMinimumHeight(45)
+        self.kayit_butonu.clicked.connect(self.kayit_ol)
         
         buton_duzen.addWidget(self.geri_butonu)
         buton_duzen.addWidget(self.kayit_butonu)
         
-        container_duzen.addWidget(self.kullanici_adi)
-        container_duzen.addWidget(self.email)
-        container_duzen.addWidget(self.sifre)
-        container_duzen.addWidget(self.sifre_tekrar)
-        container_duzen.addWidget(self.guc_etiketi)
-        container_duzen.addLayout(buton_duzen)
-        container_duzen.addStretch()
+        form_duzen.addLayout(buton_duzen)
+        duzen.addWidget(form_container)
         
-        # Alt bilgi
-        self.alt_bilgi = QLabel("© 2024 Lockly")
-        self.alt_bilgi.setAlignment(Qt.AlignCenter)
-        self.alt_bilgi.setStyleSheet("color: rgba(255, 255, 255, 0.5);")
-        container_duzen.addWidget(self.alt_bilgi)
-        
-        self.container.setLayout(container_duzen)
-        duzen.addWidget(self.container)
         self.setLayout(duzen)
 
-    def sifre_gucunu_goster(self):
-        sifre = self.sifre.text()
-        guc, geri_bildirim = self.ana_pencere.yonetici.sifre_gucunu_degerlendir(sifre)
-        
-        renk = {
-            "Zayıf": "#ff4444",
-            "Orta": "#ffbb33",
-            "Güçlü": "#00C851"
-        }
-        
-        self.guc_etiketi.setText(f"Şifre Gücü: <font color='{renk[guc]}'>{guc}</font>")
-        
     def kayit_ol(self):
-        if self.sifre.text() != self.sifre_tekrar.text():
+        kullanici_adi = self.kullanici_adi.text().strip()
+        email = self.email.text().strip()
+        sifre = self.sifre.text()
+        sifre_tekrar = self.sifre_tekrar.text()
+        
+        # Boş alan kontrolü
+        if not kullanici_adi or not email or not sifre or not sifre_tekrar:
+            QMessageBox.warning(self, "Hata", "Lütfen tüm alanları doldurun!")
+            return
+            
+        # E-posta format kontrolü
+        email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        if not email_pattern.match(email):
+            QMessageBox.warning(self, "Hata", "Lütfen geçerli bir e-posta adresi girin!")
+            return
+            
+        # Şifre eşleşme kontrolü
+        if sifre != sifre_tekrar:
             QMessageBox.warning(self, "Hata", "Şifreler eşleşmiyor!")
             return
             
-        guc, _ = self.ana_pencere.yonetici.sifre_gucunu_degerlendir(self.sifre.text())
-        if guc == "Zayıf":
-            QMessageBox.warning(self, "Hata", "Şifre çok zayıf!")
+        # Kullanıcı adı ve e-posta kontrolü
+        try:
+            self.ana_pencere.yonetici.vt.imlec.execute("""
+                SELECT kullanici_adi, email FROM kullanicilar 
+                WHERE kullanici_adi = %s OR email = %s
+            """, (kullanici_adi, email))
+            
+            mevcut = self.ana_pencere.yonetici.vt.imlec.fetchone()
+            if mevcut:
+                if mevcut[0] == kullanici_adi:
+                    QMessageBox.warning(self, "Hata", "Bu kullanıcı adı zaten kayıtlı!")
+                else:
+                    QMessageBox.warning(self, "Hata", "Bu e-posta adresi zaten kayıtlı!")
+                return
+        except Exception as e:
+            print(f"Kullanıcı kontrolü hatası: {e}")
             return
             
-        if self.ana_pencere.yonetici.kullanici_kayit(
-            self.kullanici_adi.text(),
-            self.sifre.text(),
-            self.email.text()
-        ):
+        # Kayıt işlemi
+        if self.ana_pencere.yonetici.kullanici_kayit(kullanici_adi, sifre, email):
             QMessageBox.information(self, "Başarılı", "Kayıt başarıyla tamamlandı!")
             self.ana_pencere.stacked_widget.setCurrentIndex(0)
         else:
@@ -624,41 +641,47 @@ class KayitPenceresi(QWidget):
 class AnaPencere(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setWindowTitle("Lockly - Güvenli Şifre Yöneticisi")
+        self.setMinimumSize(1000, 600)
+        
+        # Pencereyi merkeze al
+        ekran = QDesktopWidget().screenGeometry()
+        pencere = self.geometry()
+        x = (ekran.width() - pencere.width()) // 2
+        y = (ekran.height() - pencere.height()) // 2
+        self.move(x, y)
+        
+        # Şifre yöneticisi
         self.yonetici = SifreYoneticisi()
-        self.init_ui()
         
-    def init_ui(self):
-        self.setWindowTitle('Lockly - Güvenli Şifre Yöneticisi')
-        self.setGeometry(100, 100, 1000, 700)
-        self.setWindowIcon(QIcon('assets/lock_icon.png'))
-        
-        # Ana tema renklerini ayarla - Sadece koyu tema
-        palette = QPalette()
-        palette.setColor(QPalette.Window, QColor("#000000"))
-        palette.setColor(QPalette.WindowText, QColor("#00FF00"))
-        palette.setColor(QPalette.Base, QColor("#1A1A1A"))
-        palette.setColor(QPalette.AlternateBase, QColor("#333333"))
-        palette.setColor(QPalette.Text, QColor("#00FF00"))
-        palette.setColor(QPalette.Button, QColor("#333333"))
-        palette.setColor(QPalette.ButtonText, QColor("#00FF00"))
-        self.setPalette(palette)
-        
+        # Stacked widget
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
         
-        # Ekranları oluştur
+        # Giriş ekranı
         self.giris_ekrani = GirisPenceresi(self)
-        self.kayit_ekrani = KayitPenceresi(self)
-        
-        # Ekranları stack'e ekle
         self.stacked_widget.addWidget(self.giris_ekrani)
+        
+        # Kayıt ekranı
+        self.kayit_ekrani = KayitPenceresi(self)
         self.stacked_widget.addWidget(self.kayit_ekrani)
         
+        # Ana ekran
+        self.ana_ekran = AnaEkran(self)
+        self.stacked_widget.addWidget(self.ana_ekran)
+        
+        # Başlangıçta giriş ekranını göster
+        self.stacked_widget.setCurrentIndex(0)
+        
     def ana_ekrani_goster(self):
-        if not hasattr(self, 'ana_ekran'):
-            self.ana_ekran = AnaEkran(self)
-            self.stacked_widget.addWidget(self.ana_ekran)
-        self.stacked_widget.setCurrentWidget(self.ana_ekran)
+        """Ana ekranı göster ve güncelle"""
+        self.ana_ekran.sifreleri_yukle()  # Şifreleri yeniden yükle
+        self.stacked_widget.setCurrentIndex(2)  # Ana ekranı göster
+        
+    def closeEvent(self, event):
+        """Uygulama kapatılırken veritabanı bağlantısını kapat"""
+        self.yonetici.kapat()
+        event.accept()
 
 class AnaEkran(QWidget):
     def __init__(self, ana_pencere):
@@ -673,284 +696,6 @@ class AnaEkran(QWidget):
         
         # İlk yüklemeyi yap
         QTimer.singleShot(100, self.sifreleri_yukle)
-
-    def sifreleri_yukle(self):
-        """Şifreleri veritabanından yükle ve kartları oluştur"""
-        # Mevcut kartları temizle
-        while self.kartlar_duzen.count():
-            item = self.kartlar_duzen.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        
-        sifreler = self.ana_pencere.yonetici.sifreleri_getir()
-        if not sifreler:
-            # Şifre yoksa bilgi mesajı göster
-            bos_mesaj = QLabel("Henüz hiç şifre eklenmemiş.\nYeni şifre eklemek için üstteki 'Yeni Şifre' butonunu kullanın.")
-            bos_mesaj.setStyleSheet("""
-                color: rgba(255, 255, 255, 0.5);
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 20px;
-            """)
-            bos_mesaj.setAlignment(Qt.AlignCenter)
-            self.kartlar_duzen.addWidget(bos_mesaj)
-            return
-            
-        sifreler.sort(key=lambda x: x[5], reverse=True)  # Tarihe göre sırala
-        
-        for sifre in sifreler:
-            kart = self.sifre_karti_olustur(sifre)
-            self.kartlar_duzen.addWidget(kart)
-        
-        self.kartlar_duzen.addStretch()
-
-    def init_ui(self):
-        # Ana düzen
-        ana_duzen = QVBoxLayout()
-        ana_duzen.setSpacing(20)
-        ana_duzen.setContentsMargins(30, 30, 30, 30)
-        
-        # Üst bar
-        ust_bar = QWidget()
-        ust_bar.setStyleSheet("""
-            QWidget {
-                background-color: rgba(25, 25, 35, 0.95);
-                border-radius: 15px;
-                padding: 15px;
-            }
-        """)
-        ust_duzen = QHBoxLayout()
-        
-        # Sol grup (Yeni Şifre ve Yenile butonları)
-        sol_butonlar = QHBoxLayout()
-        
-        yeni_sifre = QPushButton()
-        yeni_sifre.setIcon(QIcon("assets/add_icon.png"))
-        yeni_sifre.setIconSize(QSize(20, 20))
-        yeni_sifre.setText("Yeni Şifre")
-        yeni_sifre.clicked.connect(self.yeni_sifre_ekle)
-        yeni_sifre.setCursor(Qt.PointingHandCursor)
-        yeni_sifre.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                border: none;
-                border-radius: 7px;
-                color: white;
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 8px 15px;
-                padding-left: 10px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:pressed {
-                background-color: #3d8b40;
-            }
-        """)
-        
-        yenile = QPushButton()
-        yenile.setIcon(QIcon("assets/refresh_icon.png"))
-        yenile.setIconSize(QSize(20, 20))
-        yenile.setText("Yenile")
-        yenile.clicked.connect(self.sifreleri_yukle)
-        yenile.setCursor(Qt.PointingHandCursor)
-        yenile.setStyleSheet(yeni_sifre.styleSheet().replace("#4CAF50", "#4A90E2")
-                                               .replace("#45a049", "#357ABD")
-                                               .replace("#3d8b40", "#2868B0"))
-        
-        sol_butonlar.addWidget(yeni_sifre)
-        sol_butonlar.addWidget(yenile)
-        
-        # Sağ grup (Kullanıcı bilgisi ve Çıkış)
-        sag_grup = QHBoxLayout()
-        
-        kullanici_label = QLabel(f"Hoş geldiniz, {self.ana_pencere.yonetici.mevcut_kullanici}")
-        kullanici_label.setStyleSheet("""
-            color: white;
-            font-family: 'Segoe UI';
-            font-size: 14px;
-            padding-right: 15px;
-        """)
-        
-        cikis = QPushButton()
-        cikis.setIcon(QIcon("assets/logout_icon.png"))
-        cikis.setIconSize(QSize(20, 20))
-        cikis.setText("Çıkış Yap")
-        cikis.clicked.connect(self.cikis_yap)
-        cikis.setCursor(Qt.PointingHandCursor)
-        cikis.setStyleSheet("""
-            QPushButton {
-                background-color: #E74C3C;
-                border: none;
-                border-radius: 7px;
-                color: white;
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 8px 15px;
-                padding-left: 10px;
-            }
-            QPushButton:hover {
-                background-color: #C0392B;
-            }
-            QPushButton:pressed {
-                background-color: #A93226;
-            }
-        """)
-        
-        sag_grup.addWidget(kullanici_label)
-        sag_grup.addWidget(cikis)
-        
-        ust_duzen.addLayout(sol_butonlar)
-        ust_duzen.addStretch()
-        ust_duzen.addLayout(sag_grup)
-        
-        ust_bar.setLayout(ust_duzen)
-        ana_duzen.addWidget(ust_bar)
-        
-        # Kartların container'ı için arka plan widget
-        kartlar_arka_plan = QWidget()
-        kartlar_arka_plan.setStyleSheet("""
-            QWidget {
-                background-color: rgba(25, 25, 35, 0.95);
-                border-radius: 15px;
-            }
-        """)
-        kartlar_arka_plan_duzen = QVBoxLayout()
-        
-        # Scroll Area
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background: transparent;
-            }
-            QScrollBar:vertical {
-                border: none;
-                background: rgba(255, 255, 255, 0.1);
-                width: 10px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(255, 255, 255, 0.2);
-                min-height: 20px;
-                border-radius: 5px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                border: none;
-                background: none;
-            }
-        """)
-        
-        # Kartların container'ı
-        self.kartlar_widget = QWidget()
-        self.kartlar_widget.setStyleSheet("background: transparent;")
-        self.kartlar_duzen = QVBoxLayout()
-        self.kartlar_duzen.setSpacing(15)
-        self.kartlar_duzen.setContentsMargins(20, 20, 20, 20)
-        self.kartlar_widget.setLayout(self.kartlar_duzen)
-        
-        scroll.setWidget(self.kartlar_widget)
-        kartlar_arka_plan_duzen.addWidget(scroll)
-        kartlar_arka_plan.setLayout(kartlar_arka_plan_duzen)
-        
-        ana_duzen.addWidget(kartlar_arka_plan)
-        
-        self.setLayout(ana_duzen)
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #0A0A0A;
-            }
-        """)
-
-    def sifre_duzenle(self, sifre):
-        dialog = SifreEkleDuzenleDialog(self.ana_pencere, sifre)
-        if dialog.exec_() == QDialog.Accepted:
-            self.sifreleri_yukle()
-            self.basarili_bildirim_goster("Şifre başarıyla güncellendi!")
-
-    def sifre_sil(self, sifre_id):
-        if self.ana_pencere.yonetici.sifre_sil(sifre_id):
-            self.sifreleri_yukle()
-            self.basarili_bildirim_goster("Şifre başarıyla silindi!")
-        else:
-            self.hata_bildirim_goster("Şifre silinemedi!")
-
-    def cikis_yap(self):
-        self.yenileme_timer.stop()
-        self.ana_pencere.yonetici.kullanici_cikis()
-        self.ana_pencere.stacked_widget.setCurrentIndex(0)
-
-    def basarili_bildirim_goster(self, mesaj):
-        """Başarılı işlem bildirimi göster"""
-        bildirim = QMessageBox(self)
-        bildirim.setWindowTitle("Başarılı")
-        bildirim.setText(mesaj)
-        bildirim.setIcon(QMessageBox.Information)
-        bildirim.setStyleSheet("""
-            QMessageBox {
-                background-color: #1E1E2E;
-                border: 2px solid #2ECC71;
-                border-radius: 15px;
-            }
-            QMessageBox QLabel {
-                color: white;
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 20px;
-                min-width: 300px;
-            }
-            QMessageBox QPushButton {
-                background-color: #2ECC71;
-                border: none;
-                border-radius: 8px;
-                color: white;
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 8px 16px;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #27AE60;
-            }
-        """)
-        bildirim.exec_()
-
-    def hata_bildirim_goster(self, mesaj):
-        """Hata bildirimi göster"""
-        bildirim = QMessageBox(self)
-        bildirim.setWindowTitle("Hata")
-        bildirim.setText(mesaj)
-        bildirim.setIcon(QMessageBox.Critical)
-        bildirim.setStyleSheet("""
-            QMessageBox {
-                background-color: #1E1E2E;
-                border: 2px solid #E74C3C;
-                border-radius: 15px;
-            }
-            QMessageBox QLabel {
-                color: white;
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 20px;
-                min-width: 300px;
-            }
-            QMessageBox QPushButton {
-                background-color: #E74C3C;
-                border: none;
-                border-radius: 8px;
-                color: white;
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 8px 16px;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #C0392B;
-            }
-        """)
-        bildirim.exec_()
 
     def sifre_karti_olustur(self, sifre):
         """Şifre kartı widget'ı oluştur"""
@@ -999,9 +744,6 @@ class AnaEkran(QWidget):
             QPushButton:hover {
                 background-color: rgba(255, 255, 255, 0.1);
             }
-            QPushButton:pressed {
-                background-color: rgba(255, 255, 255, 0.15);
-            }
         """
         
         # Şifre alanı
@@ -1036,7 +778,7 @@ class AnaEkran(QWidget):
         kopyala.setStyleSheet(buton_stili)
         kopyala.setToolTip("Şifreyi Kopyala")
         kopyala.setCursor(Qt.PointingHandCursor)
-        kopyala.clicked.connect(lambda: self.kopyalama_bildirimi(sifre[2]))
+        kopyala.clicked.connect(lambda: self.sifre_kopyala(sifre[2]))
         
         # Düzenle butonu
         duzenle = QPushButton("✏️")
@@ -1050,7 +792,7 @@ class AnaEkran(QWidget):
         sil.setStyleSheet(buton_stili)
         sil.setToolTip("Şifreyi Sil")
         sil.setCursor(Qt.PointingHandCursor)
-        sil.clicked.connect(lambda: self.sil_onay_kutusu(sifre))
+        sil.clicked.connect(lambda: self.sifre_sil(sifre[0]))
         
         # Butonları ekle
         for buton in [goster_buton, kopyala, duzenle, sil]:
@@ -1065,41 +807,22 @@ class AnaEkran(QWidget):
         # Güvenlik seviyesi göstergesi
         guc, geri_bildirim = self.ana_pencere.yonetici.sifre_gucunu_degerlendir(sifre[2])
         
-        # Geri bildirimleri formatlama
-        if guc == "Güçlü":
-            geri_bildirim = "✓ Bu şifre güvenlik standartlarını karşılıyor."
-        else:
-            geri_bildirim = "Öneriler:\n• " + "\n• ".join(geri_bildirim)
-        
-        # Güvenlik göstergesi container'ı
-        guc_container = QWidget()
-        guc_container.setStyleSheet("""
-            QWidget {
-                background-color: rgba(255, 255, 255, 0.05);
-                border-radius: 8px;
-                padding: 10px;
-                margin-top: 5px;
-            }
-        """)
-        guc_duzen = QHBoxLayout()
-        
-        # Güvenlik seviyesine göre renk ve ikon
-        guc_renk = {
-            "Zayıf": "#E74C3C",
-            "Orta": "#F1C40F",
-            "Güçlü": "#2ECC71"
-        }
-        
-        guc_ikon = {
-            "Zayıf": "🔓",
-            "Orta": "🔐",
-            "Güçlü": "🛡️"
-        }
-        
         # Progress bar
         progress = QProgressBar()
         progress.setTextVisible(False)
         progress.setFixedHeight(6)
+        
+        if guc == "Güçlü":
+            deger = 100
+            renk = "#2ECC71"
+        elif guc == "Orta":
+            deger = 66
+            renk = "#F1C40F"
+        else:
+            deger = 33
+            renk = "#E74C3C"
+        
+        progress.setValue(deger)
         progress.setStyleSheet(f"""
             QProgressBar {{
                 background-color: rgba(255, 255, 255, 0.1);
@@ -1107,48 +830,23 @@ class AnaEkran(QWidget):
                 border-radius: 3px;
             }}
             QProgressBar::chunk {{
-                background-color: {guc_renk[guc]};
+                background-color: {renk};
                 border-radius: 3px;
             }}
         """)
         
-        if guc == "Zayıf":
-            progress.setValue(33)
-        elif guc == "Orta":
-            progress.setValue(66)
-        else:
-            progress.setValue(100)
-        
-        # Güvenlik seviyesi etiketi
-        guc_label = QLabel(f"{guc_ikon[guc]} Güvenlik: {guc}")
+        guc_label = QLabel(f"Güvenlik: {guc}")
         guc_label.setStyleSheet(f"""
-            color: {guc_renk[guc]};
-            font-family: 'Segoe UI';
-            font-size: 13px;
-            font-weight: bold;
-        """)
-        
-        # Geri bildirim etiketi
-        bilgi_label = QLabel(geri_bildirim)
-        bilgi_label.setStyleSheet("""
-            color: rgba(255, 255, 255, 0.7);
+            color: {renk};
             font-family: 'Segoe UI';
             font-size: 12px;
-            padding: 5px 0;
-            line-height: 1.4;
         """)
-        bilgi_label.setWordWrap(True)
         
-        # Sol grup (ikon ve seviye)
-        sol_grup = QVBoxLayout()
-        sol_grup.addWidget(guc_label)
-        sol_grup.addWidget(progress)
+        guc_duzen = QHBoxLayout()
+        guc_duzen.addWidget(progress)
+        guc_duzen.addWidget(guc_label)
         
-        guc_duzen.addLayout(sol_grup, stretch=1)
-        guc_duzen.addWidget(bilgi_label, stretch=2)
-        guc_container.setLayout(guc_duzen)
-        
-        duzen.addWidget(guc_container)
+        duzen.addLayout(guc_duzen)
         
         # Alt bilgiler
         if sifre[3]:  # Website
@@ -1168,92 +866,227 @@ class AnaEkran(QWidget):
         kart.setLayout(duzen)
         return kart
 
-    def kopyalama_bildirimi(self, sifre):
-        """Şifreyi panoya kopyala ve bildirim göster"""
-        QApplication.clipboard().setText(sifre)
-        self.basarili_bildirim_goster("Şifre panoya kopyalandı!")
+    def sifreyi_goster_gizle(self, kart, sifre):
+        """Şifreyi göster/gizle"""
+        sifre_label = kart.findChild(QLabel, "", options=Qt.FindChildrenRecursively)
+        for label in kart.findChildren(QLabel):
+            if label.text().startswith("Şifre:"):
+                if label.property("gizli"):
+                    label.setText(f"Şifre: {sifre}")
+                    label.setProperty("gizli", False)
+                else:
+                    label.setText(f"Şifre: {'•' * len(sifre)}")
+                    label.setProperty("gizli", True)
+                break
 
-    def sil_onay_kutusu(self, sifre):
-        """Silme onay kutusu göster"""
-        onay = QMessageBox(self)
-        onay.setWindowTitle("Şifre Sil")
-        onay.setText(f"'{sifre[1]}' başlıklı şifre kalıcı olarak silinecek.")
-        onay.setInformativeText("Bu işlemi geri alamazsınız.")
-        onay.setIcon(QMessageBox.Warning)
-        onay.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        onay.setDefaultButton(QMessageBox.No)
+    def sifre_kopyala(self, sifre):
+        """Şifreyi panoya kopyala"""
+        QApplication.clipboard().setText(sifre)
+        QMessageBox.information(self, "Başarılı", "Şifre panoya kopyalandı!")
         
-        # Evet/Hayır butonlarını özelleştir
-        evet_buton = onay.button(QMessageBox.Yes)
-        evet_buton.setText("✔ Evet, Sil")
-        evet_buton.setStyleSheet("""
+    def sifre_duzenle(self, sifre_id):
+        """Şifre düzenleme dialogunu göster"""
+        dialog = SifreEkleDuzenleDialog(self.ana_pencere, sifre_id)
+        if dialog.exec_() == QDialog.Accepted:
+            self.sifreleri_yukle()
+            
+    def sifre_sil(self, sifre_id):
+        """Şifreyi sil"""
+        cevap = QMessageBox.question(
+            self,
+            "Onay",
+            "Bu şifreyi silmek istediğinizden emin misiniz?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if cevap == QMessageBox.Yes:
+            if self.ana_pencere.yonetici.sifre_sil(sifre_id):
+                self.sifreleri_yukle()
+                QMessageBox.information(self, "Başarılı", "Şifre başarıyla silindi!")
+            else:
+                QMessageBox.warning(self, "Hata", "Şifre silinemedi!")
+
+    def init_ui(self):
+        # Ana düzen
+        ana_duzen = QVBoxLayout()
+        ana_duzen.setSpacing(20)
+        ana_duzen.setContentsMargins(30, 30, 30, 30)
+        
+        # Üst bar
+        ust_bar = QWidget()
+        ust_bar.setStyleSheet("""
+            QWidget {
+                background-color: rgba(25, 25, 35, 0.95);
+                border-radius: 15px;
+                padding: 15px;
+            }
+        """)
+        ust_duzen = QHBoxLayout()
+        
+        # Sol grup (Yeni Şifre ve Yenile butonları)
+        sol_butonlar = QHBoxLayout()
+        yeni_sifre = QPushButton()
+        yeni_sifre.setIcon(QIcon("assets/add_icon.png"))
+        yeni_sifre.setIconSize(QSize(20, 20))
+        yeni_sifre.setText("Yeni Şifre")
+        yeni_sifre.clicked.connect(self.sifre_ekle)
+        yeni_sifre.setCursor(Qt.PointingHandCursor)
+        yeni_sifre.setStyleSheet("""
             QPushButton {
-                background-color: #E74C3C;
+                background-color: #4CAF50;
                 border: none;
-                border-radius: 8px;
+                border-radius: 7px;
                 color: white;
                 font-family: 'Segoe UI';
                 font-size: 14px;
-                padding: 8px 16px;
-                min-width: 120px;
+                padding: 8px 15px;
+                padding-left: 10px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        
+        yenile = QPushButton()
+        yenile.setIcon(QIcon("assets/refresh_icon.png"))
+        yenile.setIconSize(QSize(20, 20))
+        yenile.setText("Yenile")
+        yenile.clicked.connect(self.sifreleri_yukle)
+        yenile.setCursor(Qt.PointingHandCursor)
+        yenile.setStyleSheet(yeni_sifre.styleSheet().replace("#4CAF50", "#4A90E2")
+                           .replace("#45a049", "#357ABD"))
+        
+        sol_butonlar.addWidget(yeni_sifre)
+        sol_butonlar.addWidget(yenile)
+        
+        # Sağ grup (Kullanıcı bilgisi ve Çıkış)
+        sag_grup = QHBoxLayout()
+        kullanici_label = QLabel(f"Hoş geldiniz, {self.ana_pencere.yonetici.mevcut_kullanici}")
+        kullanici_label.setStyleSheet("""
+            color: white;
+            font-family: 'Segoe UI';
+            font-size: 14px;
+            padding-right: 15px;
+        """)
+        
+        cikis = QPushButton()
+        cikis.setIcon(QIcon("assets/logout_icon.png"))
+        cikis.setIconSize(QSize(20, 20))
+        cikis.setText("Çıkış Yap")
+        cikis.clicked.connect(self.cikis_yap)
+        cikis.setCursor(Qt.PointingHandCursor)
+        cikis.setStyleSheet("""
+            QPushButton {
+                background-color: #E74C3C;
+                border: none;
+                border-radius: 7px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+                padding: 8px 15px;
+                padding-left: 10px;
             }
             QPushButton:hover {
                 background-color: #C0392B;
             }
         """)
-
-        hayir_buton = onay.button(QMessageBox.No)
-        hayir_buton.setText("✖ Vazgeç")
-        hayir_buton.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.1);
-                border: none;
-                border-radius: 8px;
-                color: white;
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 8px 16px;
-                min-width: 120px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.15);
-            }
-        """)
-
-        onay.setStyleSheet("""
-            QMessageBox {
-                background-color: #1E1E2E;
-                border: 2px solid #E74C3C;
+        
+        sag_grup.addWidget(kullanici_label)
+        sag_grup.addWidget(cikis)
+        
+        ust_duzen.addLayout(sol_butonlar)
+        ust_duzen.addStretch()
+        ust_duzen.addLayout(sag_grup)
+        ust_bar.setLayout(ust_duzen)
+        
+        ana_duzen.addWidget(ust_bar)
+        
+        # Kartların container'ı için arka plan widget
+        kartlar_arka_plan = QWidget()
+        kartlar_arka_plan.setStyleSheet("""
+            QWidget {
+                background-color: rgba(25, 25, 35, 0.95);
                 border-radius: 15px;
             }
-            QMessageBox QLabel {
-                color: white;
-                font-family: 'Segoe UI';
-                font-size: 14px;
-                padding: 20px;
-                min-width: 300px;
+        """)
+        kartlar_arka_plan_duzen = QVBoxLayout()
+        
+        # Scroll Area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background: transparent;
             }
-            QLabel#qt_msgbox_label { 
-                color: white;
-                font-weight: bold;
-                font-size: 15px;
+            QScrollBar:vertical {
+                border: none;
+                background: rgba(255, 255, 255, 0.1);
+                width: 10px;
+                margin: 0px;
             }
-            QLabel#qt_msgbox_informativelabel { 
-                color: #E74C3C;
-                font-size: 13px;
-                margin-top: -10px;
+            QScrollBar::handle:vertical {
+                background: rgba(255, 255, 255, 0.2);
+                min-height: 20px;
+                border-radius: 5px;
             }
         """)
         
-        if onay.exec_() == QMessageBox.Yes:
-            self.sifre_sil(sifre[0])
-
-    def yeni_sifre_ekle(self):
-        """Yeni şifre ekleme dialog'unu göster"""
+        # Kartların container'ı
+        self.kartlar_widget = QWidget()
+        self.kartlar_widget.setStyleSheet("background: transparent;")
+        self.kartlar_duzen = QVBoxLayout()
+        self.kartlar_duzen.setSpacing(15)
+        self.kartlar_duzen.setContentsMargins(20, 20, 20, 20)
+        self.kartlar_widget.setLayout(self.kartlar_duzen)
+        
+        scroll.setWidget(self.kartlar_widget)
+        kartlar_arka_plan_duzen.addWidget(scroll)
+        kartlar_arka_plan.setLayout(kartlar_arka_plan_duzen)
+        
+        ana_duzen.addWidget(kartlar_arka_plan)
+        self.setLayout(ana_duzen)
+        
+    def sifre_ekle(self):
         dialog = SifreEkleDuzenleDialog(self.ana_pencere)
         if dialog.exec_() == QDialog.Accepted:
             self.sifreleri_yukle()
-            self.basarili_bildirim_goster("Şifre başarıyla eklendi!")
+            
+    def cikis_yap(self):
+        self.yenileme_timer.stop()
+        self.ana_pencere.yonetici.kullanici_cikis()
+        self.ana_pencere.stacked_widget.setCurrentIndex(0)
+        
+    def sifreleri_yukle(self):
+        """Şifreleri veritabanından yükle ve kartları oluştur"""
+        # Mevcut kartları temizle
+        while self.kartlar_duzen.count():
+            item = self.kartlar_duzen.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        sifreler = self.ana_pencere.yonetici.sifreleri_getir()
+        
+        if not sifreler:
+            # Şifre yoksa bilgi mesajı göster
+            bos_mesaj = QLabel("Henüz hiç şifre eklenmemiş.\nYeni şifre eklemek için üstteki 'Yeni Şifre' butonunu kullanın.")
+            bos_mesaj.setStyleSheet("""
+                color: rgba(255, 255, 255, 0.5);
+                font-family: 'Segoe UI';
+                font-size: 14px;
+                padding: 20px;
+            """)
+            bos_mesaj.setAlignment(Qt.AlignCenter)
+            self.kartlar_duzen.addWidget(bos_mesaj)
+            return
+            
+        sifreler.sort(key=lambda x: x[5], reverse=True)  # Tarihe göre sırala
+        
+        for sifre in sifreler:
+            kart = self.sifre_karti_olustur(sifre)
+            self.kartlar_duzen.addWidget(kart)
+            
+        self.kartlar_duzen.addStretch()
 
 class SifreEkleDuzenleDialog(QDialog):
     def __init__(self, ana_pencere, sifre_bilgisi=None):
@@ -1570,7 +1403,7 @@ class SifreEkleDuzenleDialog(QDialog):
         }
         
         guc_ikon = {
-            "Zayıf": "🔓",
+            "Zayıf": "��",
             "Orta": "🔐",
             "Güçlü": "🛡️"
         }
@@ -1613,7 +1446,7 @@ class SifreEkleDuzenleDialog(QDialog):
                 line-height: 1.4;
             """)
         else:
-            self.bilgi_label.setText("Öneriler:\n• " + "\n• ".join(geri_bildirim))
+            self.bilgi_label.setText("Öneriler:\n" + "\n• ".join(geri_bildirim))
             self.bilgi_label.setStyleSheet("""
                 color: rgba(255, 255, 255, 0.7);
                 font-family: 'Segoe UI';
@@ -1769,8 +1602,968 @@ class SifreEkleDuzenleDialog(QDialog):
             
             hata.exec_()
 
+    def yeni_sifre_form(self):
+        """Yeni şifre belirleme formunu göster"""
+        # Mevcut widgetları temizle
+        if self.layout():
+            while self.layout().count():
+                item = self.layout().takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            QWidget().setLayout(self.layout())
+            
+        duzen = QVBoxLayout()
+        duzen.setSpacing(20)
+        duzen.setContentsMargins(30, 30, 30, 30)
+        
+        # Logo
+        logo_label = QLabel()
+        logo_pixmap = QIcon("assets/lockly_logo.png").pixmap(QSize(64, 64))
+        logo_label.setPixmap(logo_pixmap)
+        logo_label.setAlignment(Qt.AlignCenter)
+        duzen.addWidget(logo_label)
+        
+        baslik = QLabel("Yeni Şifre Belirle")
+        baslik.setStyleSheet("""
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            margin: 20px 0;
+        """)
+        baslik.setAlignment(Qt.AlignCenter)
+        duzen.addWidget(baslik)
+        
+        # Form container
+        form_container = QWidget()
+        form_container.setStyleSheet("""
+            QWidget {
+                background-color: rgba(255, 255, 255, 0.03);
+                border-radius: 15px;
+                padding: 20px;
+            }
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                padding: 12px;
+                color: white;
+                font-size: 14px;
+                min-height: 45px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #4A90E2;
+                background-color: rgba(255, 255, 255, 0.08);
+            }
+            QLabel {
+                color: white;
+                font-size: 14px;
+                margin-bottom: 5px;
+            }
+        """)
+        form_duzen = QVBoxLayout(form_container)
+        form_duzen.setSpacing(15)
+        
+        # Şifre alanları
+        self.yeni_sifre = QLineEdit()
+        self.yeni_sifre.setPlaceholderText("Yeni şifrenizi girin")
+        self.yeni_sifre.setEchoMode(QLineEdit.Password)
+        
+        self.yeni_sifre_tekrar = QLineEdit()
+        self.yeni_sifre_tekrar.setPlaceholderText("Yeni şifrenizi tekrar girin")
+        self.yeni_sifre_tekrar.setEchoMode(QLineEdit.Password)
+        
+        form_duzen.addWidget(QLabel("Yeni Şifre"))
+        form_duzen.addWidget(self.yeni_sifre)
+        form_duzen.addWidget(QLabel("Şifre Tekrar"))
+        form_duzen.addWidget(self.yeni_sifre_tekrar)
+        
+        duzen.addWidget(form_container)
+        
+        # Güncelle butonu
+        guncelle_buton = QPushButton("Şifreyi Güncelle")
+        guncelle_buton.setStyleSheet("""
+            QPushButton {
+                background-color: #4A90E2;
+                border: none;
+                border-radius: 8px;
+                color: white;
+                font-size: 14px;
+                padding: 12px;
+                min-height: 45px;
+            }
+            QPushButton:hover {
+                background-color: #357ABD;
+            }
+        """)
+        guncelle_buton.clicked.connect(self.sifreyi_guncelle)
+        duzen.addWidget(guncelle_buton)
+        
+        self.setLayout(duzen)
+        
+    def sifreyi_guncelle(self):
+        """Yeni şifreyi kontrol et ve güncelle"""
+        yeni_sifre = self.yeni_sifre.text()
+        yeni_sifre_tekrar = self.yeni_sifre_tekrar.text()
+        
+        # Şifre kontrolü
+        if not yeni_sifre or not yeni_sifre_tekrar:
+            QMessageBox.warning(self, "Hata", "Lütfen tüm alanları doldurun!")
+            return
+            
+        if yeni_sifre != yeni_sifre_tekrar:
+            QMessageBox.warning(self, "Hata", "Şifreler eşleşmiyor!")
+            return
+            
+        # Şifre gücü kontrolü
+        guc, _ = self.ana_pencere.yonetici.sifre_gucunu_degerlendir(yeni_sifre)
+        if guc == "Zayıf":
+            QMessageBox.warning(self, "Hata", "Lütfen daha güçlü bir şifre seçin!")
+            return
+            
+        try:
+            # Kullanıcı ID'sini bul
+            self.ana_pencere.yonetici.vt.imlec.execute("""
+                SELECT id FROM kullanicilar WHERE email = %s
+            """, (self.email,))
+            
+            kullanici = self.ana_pencere.yonetici.vt.imlec.fetchone()
+            if not kullanici:
+                QMessageBox.warning(self, "Hata", "Kullanıcı bulunamadı!")
+                return
+                
+            # Şifreyi güncelle
+            if self.ana_pencere.yonetici.sifre_sifirla(kullanici[0], yeni_sifre):
+                QMessageBox.information(self, "Başarılı", "Şifreniz başarıyla güncellendi!")
+                self.accept()
+            else:
+                QMessageBox.warning(self, "Hata", "Şifre güncellenemedi!")
+                
+        except Exception as e:
+            print(f"Şifre güncelleme hatası: {e}")
+            QMessageBox.warning(self, "Hata", "Bir hata oluştu!")
+
+class SifreSifirlama(QDialog):
+    def __init__(self, ana_pencere):
+        super().__init__()
+        self.ana_pencere = ana_pencere
+        self.setWindowTitle("Şifremi Unuttum")
+        self.setFixedWidth(500)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setStyleSheet("""
+            QDialog {
+                background: #1E1E2E;
+                border: 2px solid rgba(74, 144, 226, 0.3);
+                border-radius: 20px;
+            }
+        """)
+        self.init_ui()
+
+    def init_ui(self):
+        duzen = QVBoxLayout()
+        duzen.setSpacing(20)
+        duzen.setContentsMargins(0, 0, 0, 0)
+
+        # Başlık çubuğu
+        baslik_cubugu = QWidget()
+        baslik_cubugu.setStyleSheet("""
+            QWidget {
+                background: rgba(74, 144, 226, 0.1);
+                border-top-left-radius: 18px;
+                border-top-right-radius: 18px;
+            }
+        """)
+        baslik_duzen = QHBoxLayout()
+        baslik_duzen.setContentsMargins(20, 15, 20, 15)
+        
+        baslik = QLabel("Şifremi Unuttum")
+        baslik.setStyleSheet("""
+            color: #4A90E2;
+            font-family: 'Segoe UI';
+            font-size: 18px;
+            font-weight: bold;
+        """)
+        
+        kapat_buton = QPushButton("✕")
+        kapat_buton.setCursor(Qt.PointingHandCursor)
+        kapat_buton.clicked.connect(self.reject)
+        kapat_buton.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #4A90E2;
+                font-size: 16px;
+                font-weight: bold;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 15px;
+            }
+            QPushButton:hover {
+                background: rgba(231, 76, 60, 0.1);
+                color: #E74C3C;
+            }
+        """)
+        
+        baslik_duzen.addWidget(baslik)
+        baslik_duzen.addStretch()
+        baslik_duzen.addWidget(kapat_buton)
+        baslik_cubugu.setLayout(baslik_duzen)
+        duzen.addWidget(baslik_cubugu)
+
+        # Ana içerik
+        icerik = QWidget()
+        icerik_duzen = QVBoxLayout()
+        icerik_duzen.setSpacing(15)
+        icerik_duzen.setContentsMargins(30, 20, 30, 20)
+        
+        # Logo
+        logo_label = QLabel()
+        logo_pixmap = QIcon("assets/lockly_logo.png").pixmap(QSize(64, 64))
+        logo_label.setPixmap(logo_pixmap)
+        logo_label.setAlignment(Qt.AlignCenter)
+        icerik_duzen.addWidget(logo_label)
+        
+        # Açıklama
+        aciklama = QLabel("Hesabınıza kayıtlı e-posta adresine\ndoğrulama kodu göndereceğiz.")
+        aciklama.setStyleSheet("""
+            color: rgba(255, 255, 255, 0.7);
+            font-family: 'Segoe UI';
+            font-size: 14px;
+        """)
+        aciklama.setAlignment(Qt.AlignCenter)
+        icerik_duzen.addWidget(aciklama)
+        
+        # Input stil tanımı
+        input_stili = """
+            QLineEdit {
+                background: rgba(255, 255, 255, 0.05);
+                border: 2px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                padding: 12px 15px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+            }
+            QLineEdit:hover {
+                background: rgba(255, 255, 255, 0.07);
+                border: 2px solid rgba(74, 144, 226, 0.3);
+            }
+            QLineEdit:focus {
+                background: rgba(74, 144, 226, 0.1);
+                border: 2px solid #4A90E2;
+            }
+            QLineEdit::placeholder {
+                color: rgba(255, 255, 255, 0.3);
+            }
+        """
+        
+        # Kullanıcı adı alanı
+        self.kullanici_adi = QLineEdit()
+        self.kullanici_adi.setPlaceholderText("Kullanıcı Adı")
+        self.kullanici_adi.setMinimumHeight(45)
+        self.kullanici_adi.setStyleSheet(input_stili)
+        icerik_duzen.addWidget(self.kullanici_adi)
+        
+        icerik.setLayout(icerik_duzen)
+        duzen.addWidget(icerik)
+
+        # Alt butonlar
+        buton_container = QWidget()
+        buton_container.setStyleSheet("""
+            QWidget {
+                background: rgba(74, 144, 226, 0.1);
+                border-bottom-left-radius: 18px;
+                border-bottom-right-radius: 18px;
+            }
+        """)
+        
+        buton_duzen = QHBoxLayout()
+        buton_duzen.setContentsMargins(20, 15, 20, 15)
+        buton_duzen.setSpacing(15)
+        
+        iptal = QPushButton("İptal")
+        iptal.setMinimumHeight(45)
+        iptal.clicked.connect(self.reject)
+        iptal.setCursor(Qt.PointingHandCursor)
+        iptal.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.05);
+                border: 2px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+                font-weight: 500;
+                padding: 12px 24px;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.1);
+                border: 2px solid rgba(255, 255, 255, 0.2);
+            }
+        """)
+        
+        gonder = QPushButton("Kod Gönder")
+        gonder.setMinimumHeight(45)
+        gonder.clicked.connect(self.kod_gonder)
+        gonder.setCursor(Qt.PointingHandCursor)
+        gonder.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4A90E2, stop:1 #357ABD);
+                border: none;
+                border-radius: 12px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+                font-weight: bold;
+                padding: 12px 24px;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #357ABD, stop:1 #2868B0);
+            }
+        """)
+        
+        buton_duzen.addWidget(iptal)
+        buton_duzen.addWidget(gonder)
+        buton_container.setLayout(buton_duzen)
+        duzen.addWidget(buton_container)
+        
+        self.setLayout(duzen)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if hasattr(self, 'oldPos'):
+            delta = event.globalPos() - self.oldPos
+            self.move(self.pos() + delta)
+            self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        if hasattr(self, 'oldPos'):
+            del self.oldPos
+
+    def kod_gonder(self):
+        """Kullanıcı adına ait e-posta adresine doğrulama kodu gönder"""
+        kullanici_adi = self.kullanici_adi.text()
+        
+        if not kullanici_adi:
+            QMessageBox.warning(self, "Hata", "Lütfen kullanıcı adınızı girin!")
+            return
+            
+        # Veritabanından e-posta adresini al
+        email = self.ana_pencere.yonetici.kullanici_eposta_getir(kullanici_adi)
+        
+        if not email:
+            QMessageBox.warning(self, "Hata", "Bu kullanıcı adına ait hesap bulunamadı!")
+            return
+            
+        try:
+            # Doğrulama kodunu oluştur ve gönder
+            kod = self.ana_pencere.yonetici.dogrulama_kodu_olustur(kullanici_adi)
+            self.ana_pencere.yonetici.dogrulama_kodu_gonder(email, kod)
+            
+            # Doğrulama ekranını aç
+            dogrulama = KodDogrulama(self.ana_pencere, email, kullanici_adi)  # kod parametresini kaldırdık
+            self.accept()
+            if dogrulama.exec_() == QDialog.Accepted:
+                # Şifre sıfırlama formunu göster
+                sifirla = YeniSifreBelirle(self.ana_pencere, kullanici_adi)
+                sifirla.exec_()
+                
+        except Exception as e:
+            QMessageBox.warning(self, "Hata", f"Doğrulama kodu gönderilemedi!\nHata: {str(e)}")
+
+class KodDogrulama(QDialog):
+    def __init__(self, ana_pencere, email, kullanici_adi):
+        super().__init__()
+        self.ana_pencere = ana_pencere
+        self.email = email
+        self.kullanici_adi = kullanici_adi
+        self.setWindowTitle("Doğrulama Kodu")
+        self.setFixedWidth(500)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setStyleSheet("""
+            QDialog {
+                background: #1E1E2E;
+                border: 2px solid rgba(74, 144, 226, 0.3);
+                border-radius: 20px;
+            }
+        """)
+        self.init_ui()
+
+    def init_ui(self):
+        duzen = QVBoxLayout()
+        duzen.setSpacing(20)
+        duzen.setContentsMargins(0, 0, 0, 0)
+
+        # Başlık çubuğu
+        baslik_cubugu = QWidget()
+        baslik_cubugu.setStyleSheet("""
+            QWidget {
+                background: rgba(74, 144, 226, 0.1);
+                border-top-left-radius: 18px;
+                border-top-right-radius: 18px;
+            }
+        """)
+        baslik_duzen = QHBoxLayout()
+        baslik_duzen.setContentsMargins(20, 15, 20, 15)
+        
+        baslik = QLabel("Doğrulama Kodu")
+        baslik.setStyleSheet("""
+            color: #4A90E2;
+            font-family: 'Segoe UI';
+            font-size: 18px;
+            font-weight: bold;
+        """)
+        
+        kapat_buton = QPushButton("✕")
+        kapat_buton.setCursor(Qt.PointingHandCursor)
+        kapat_buton.clicked.connect(self.reject)
+        kapat_buton.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #4A90E2;
+                font-size: 16px;
+                font-weight: bold;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 15px;
+            }
+            QPushButton:hover {
+                background: rgba(231, 76, 60, 0.1);
+                color: #E74C3C;
+            }
+        """)
+        
+        baslik_duzen.addWidget(baslik)
+        baslik_duzen.addStretch()
+        baslik_duzen.addWidget(kapat_buton)
+        baslik_cubugu.setLayout(baslik_duzen)
+        duzen.addWidget(baslik_cubugu)
+
+        # Ana içerik
+        icerik = QWidget()
+        icerik_duzen = QVBoxLayout()
+        icerik_duzen.setSpacing(15)
+        icerik_duzen.setContentsMargins(30, 20, 30, 20)
+        
+        # Logo
+        logo_label = QLabel()
+        logo_pixmap = QIcon("assets/lockly_logo.png").pixmap(QSize(64, 64))
+        logo_label.setPixmap(logo_pixmap)
+        logo_label.setAlignment(Qt.AlignCenter)
+        icerik_duzen.addWidget(logo_label)
+        
+        # Açıklama
+        aciklama = QLabel(f"E-posta adresinize ({self.email}) gönderilen\n6 haneli doğrulama kodunu girin.")
+        aciklama.setStyleSheet("""
+            color: rgba(255, 255, 255, 0.7);
+            font-family: 'Segoe UI';
+            font-size: 14px;
+        """)
+        aciklama.setAlignment(Qt.AlignCenter)
+        icerik_duzen.addWidget(aciklama)
+        
+        # Kod giriş alanı
+        self.kod_input = QLineEdit()
+        self.kod_input.setPlaceholderText("Doğrulama Kodu")
+        self.kod_input.setMaxLength(6)
+        self.kod_input.setMinimumHeight(45)
+        self.kod_input.setAlignment(Qt.AlignCenter)
+        self.kod_input.setStyleSheet("""
+            QLineEdit {
+                background: rgba(255, 255, 255, 0.05);
+                border: 2px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                padding: 12px 15px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 18px;
+                letter-spacing: 5px;
+            }
+            QLineEdit:hover {
+                background: rgba(255, 255, 255, 0.07);
+                border: 2px solid rgba(74, 144, 226, 0.3);
+            }
+            QLineEdit:focus {
+                background: rgba(74, 144, 226, 0.1);
+                border: 2px solid #4A90E2;
+            }
+        """)
+        icerik_duzen.addWidget(self.kod_input)
+        
+        # Yeni kod gönder linki
+        yeni_kod = QPushButton("Yeni kod gönder")
+        yeni_kod.setCursor(Qt.PointingHandCursor)
+        yeni_kod.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #4A90E2;
+                font-family: 'Segoe UI';
+                font-size: 13px;
+                text-decoration: underline;
+            }
+            QPushButton:hover {
+                color: #357ABD;
+            }
+        """)
+        icerik_duzen.addWidget(yeni_kod, alignment=Qt.AlignCenter)
+        
+        icerik.setLayout(icerik_duzen)
+        duzen.addWidget(icerik)
+
+        # Alt butonlar
+        buton_container = QWidget()
+        buton_container.setStyleSheet("""
+            QWidget {
+                background: rgba(74, 144, 226, 0.1);
+                border-bottom-left-radius: 18px;
+                border-bottom-right-radius: 18px;
+            }
+        """)
+        
+        buton_duzen = QHBoxLayout()
+        buton_duzen.setContentsMargins(20, 15, 20, 15)
+        buton_duzen.setSpacing(15)
+        
+        iptal = QPushButton("İptal")
+        iptal.setMinimumHeight(45)
+        iptal.clicked.connect(self.reject)
+        iptal.setCursor(Qt.PointingHandCursor)
+        iptal.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.05);
+                border: 2px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+                font-weight: 500;
+                padding: 12px 24px;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.1);
+                border: 2px solid rgba(255, 255, 255, 0.2);
+            }
+        """)
+        
+        dogrula = QPushButton("Doğrula")
+        dogrula.setMinimumHeight(45)
+        dogrula.clicked.connect(self.kodu_dogrula)
+        dogrula.setCursor(Qt.PointingHandCursor)
+        dogrula.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4A90E2, stop:1 #357ABD);
+                border: none;
+                border-radius: 12px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+                font-weight: bold;
+                padding: 12px 24px;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #357ABD, stop:1 #2868B0);
+            }
+        """)
+        
+        buton_duzen.addWidget(iptal)
+        buton_duzen.addWidget(dogrula)
+        buton_container.setLayout(buton_duzen)
+        duzen.addWidget(buton_container)
+        
+        self.setLayout(duzen)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if hasattr(self, 'oldPos'):
+            delta = event.globalPos() - self.oldPos
+            self.move(self.pos() + delta)
+            self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        if hasattr(self, 'oldPos'):
+            del self.oldPos
+
+    def kodu_dogrula(self):
+        """Girilen kodu doğrula"""
+        kod = self.kod_input.text()
+        if len(kod) != 6:
+            QMessageBox.warning(self, "Hata", "Lütfen 6 haneli kodu eksiksiz girin!")
+            return
+            
+        if self.ana_pencere.yonetici.dogrulama_kodu_kontrol_et(self.kullanici_adi, kod):
+            self.accept()  # Kod doğruysa pencereyi kapat
+        else:
+            QMessageBox.warning(self, "Hata", "Doğrulama kodu hatalı veya süresi dolmuş!")
+
+class YeniSifreBelirle(QDialog):
+    def __init__(self, ana_pencere, kullanici_adi):  # email yerine kullanici_adi alıyoruz
+        super().__init__()
+        self.ana_pencere = ana_pencere
+        self.kullanici_adi = kullanici_adi  # kullanici_adi'nı saklıyoruz
+        self.setWindowTitle("Yeni Şifre Belirle")
+        self.setFixedWidth(500)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setStyleSheet("""
+            QDialog {
+                background: #1E1E2E;
+                border: 2px solid rgba(74, 144, 226, 0.3);
+                border-radius: 20px;
+            }
+        """)
+        self.init_ui()
+
+    def init_ui(self):
+        duzen = QVBoxLayout()
+        duzen.setSpacing(20)
+        duzen.setContentsMargins(0, 0, 0, 0)
+
+        # Başlık çubuğu
+        baslik_cubugu = QWidget()
+        baslik_cubugu.setStyleSheet("""
+            QWidget {
+                background: rgba(74, 144, 226, 0.1);
+                border-top-left-radius: 18px;
+                border-top-right-radius: 18px;
+            }
+        """)
+        baslik_duzen = QHBoxLayout()
+        baslik_duzen.setContentsMargins(20, 15, 20, 15)
+        
+        baslik = QLabel("Yeni Şifre Belirle")
+        baslik.setStyleSheet("""
+            color: #4A90E2;
+            font-family: 'Segoe UI';
+            font-size: 18px;
+            font-weight: bold;
+        """)
+        
+        kapat_buton = QPushButton("✕")
+        kapat_buton.setCursor(Qt.PointingHandCursor)
+        kapat_buton.clicked.connect(self.reject)
+        kapat_buton.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #4A90E2;
+                font-size: 16px;
+                font-weight: bold;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 15px;
+            }
+            QPushButton:hover {
+                background: rgba(231, 76, 60, 0.1);
+                color: #E74C3C;
+            }
+        """)
+        
+        baslik_duzen.addWidget(baslik)
+        baslik_duzen.addStretch()
+        baslik_duzen.addWidget(kapat_buton)
+        baslik_cubugu.setLayout(baslik_duzen)
+        duzen.addWidget(baslik_cubugu)
+
+        # Ana içerik
+        icerik = QWidget()
+        icerik_duzen = QVBoxLayout()
+        icerik_duzen.setSpacing(15)
+        icerik_duzen.setContentsMargins(30, 20, 30, 20)
+        
+        # Logo
+        logo_label = QLabel()
+        logo_pixmap = QIcon("assets/lockly_logo.png").pixmap(QSize(64, 64))
+        logo_label.setPixmap(logo_pixmap)
+        logo_label.setAlignment(Qt.AlignCenter)
+        icerik_duzen.addWidget(logo_label)
+        
+        # Açıklama
+        aciklama = QLabel("Hesabınız için yeni bir şifre belirleyin.")
+        aciklama.setStyleSheet("""
+            color: rgba(255, 255, 255, 0.7);
+            font-family: 'Segoe UI';
+            font-size: 14px;
+        """)
+        aciklama.setAlignment(Qt.AlignCenter)
+        icerik_duzen.addWidget(aciklama)
+        
+        # Şifre alanları
+        self.yeni_sifre = QLineEdit()
+        self.yeni_sifre.setPlaceholderText("Yeni Şifre")
+        self.yeni_sifre.setEchoMode(QLineEdit.Password)
+        self.yeni_sifre.setMinimumHeight(45)
+        self.yeni_sifre.textChanged.connect(self.sifre_gucunu_goster)
+        
+        self.sifre_tekrar = QLineEdit()
+        self.sifre_tekrar.setPlaceholderText("Yeni Şifre (Tekrar)")
+        self.sifre_tekrar.setEchoMode(QLineEdit.Password)
+        self.sifre_tekrar.setMinimumHeight(45)
+        
+        input_stili = """
+            QLineEdit {
+                background: rgba(255, 255, 255, 0.05);
+                border: 2px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                padding: 12px 15px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+            }
+            QLineEdit:hover {
+                background: rgba(255, 255, 255, 0.07);
+                border: 2px solid rgba(74, 144, 226, 0.3);
+            }
+            QLineEdit:focus {
+                background: rgba(74, 144, 226, 0.1);
+                border: 2px solid #4A90E2;
+            }
+        """
+        
+        self.yeni_sifre.setStyleSheet(input_stili)
+        self.sifre_tekrar.setStyleSheet(input_stili)
+        
+        icerik_duzen.addWidget(self.yeni_sifre)
+        icerik_duzen.addWidget(self.sifre_tekrar)
+        
+        # Şifre gücü göstergesi
+        self.guc_container = QWidget()
+        self.guc_container.hide()
+        self.guc_container.setStyleSheet("""
+            QWidget {
+                background: rgba(255, 255, 255, 0.03);
+                border-radius: 12px;
+                padding: 15px;
+            }
+        """)
+        
+        guc_duzen = QVBoxLayout()
+        guc_duzen.setSpacing(10)
+        
+        self.guc_label = QLabel()
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(6)
+        self.bilgi_label = QLabel()
+        self.bilgi_label.setWordWrap(True)
+        
+        guc_duzen.addWidget(self.guc_label)
+        guc_duzen.addWidget(self.progress)
+        guc_duzen.addWidget(self.bilgi_label)
+        
+        self.guc_container.setLayout(guc_duzen)
+        icerik_duzen.addWidget(self.guc_container)
+        
+        icerik.setLayout(icerik_duzen)
+        duzen.addWidget(icerik)
+
+        # Alt butonlar
+        buton_container = QWidget()
+        buton_container.setStyleSheet("""
+            QWidget {
+                background: rgba(74, 144, 226, 0.1);
+                border-bottom-left-radius: 18px;
+                border-bottom-right-radius: 18px;
+            }
+        """)
+        
+        buton_duzen = QHBoxLayout()
+        buton_duzen.setContentsMargins(20, 15, 20, 15)
+        buton_duzen.setSpacing(15)
+        
+        iptal = QPushButton("İptal")
+        iptal.setMinimumHeight(45)
+        iptal.clicked.connect(self.reject)
+        iptal.setCursor(Qt.PointingHandCursor)
+        iptal.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.05);
+                border: 2px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+                font-weight: 500;
+                padding: 12px 24px;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.1);
+                border: 2px solid rgba(255, 255, 255, 0.2);
+            }
+        """)
+        
+        kaydet = QPushButton("Şifreyi Kaydet")
+        kaydet.setMinimumHeight(45)
+        kaydet.clicked.connect(self.sifreyi_kaydet)
+        kaydet.setCursor(Qt.PointingHandCursor)
+        kaydet.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4A90E2, stop:1 #357ABD);
+                border: none;
+                border-radius: 12px;
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 14px;
+                font-weight: bold;
+                padding: 12px 24px;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #357ABD, stop:1 #2868B0);
+            }
+        """)
+        
+        buton_duzen.addWidget(iptal)
+        buton_duzen.addWidget(kaydet)
+        buton_container.setLayout(buton_duzen)
+        duzen.addWidget(buton_container)
+        
+        self.setLayout(duzen)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if hasattr(self, 'oldPos'):
+            delta = event.globalPos() - self.oldPos
+            self.move(self.pos() + delta)
+            self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        if hasattr(self, 'oldPos'):
+            del self.oldPos
+
+    def sifre_gucunu_goster(self):
+        """Şifre değiştiğinde güvenlik analizini güncelle"""
+        sifre = self.yeni_sifre.text()
+        
+        if not sifre:
+            self.guc_container.hide()
+            return
+        else:
+            self.guc_container.show()
+        
+        guc, geri_bildirim = self.ana_pencere.yonetici.sifre_gucunu_degerlendir(sifre)
+        
+        # Renk ve değerleri ayarla
+        guc_renk = {
+            "Zayıf": "#E74C3C",
+            "Orta": "#F1C40F",
+            "Güçlü": "#2ECC71"
+        }
+        
+        # Progress bar güncelle
+        self.progress.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: rgba(255, 255, 255, 0.1);
+                border: none;
+                border-radius: 3px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {guc_renk[guc]};
+                border-radius: 3px;
+            }}
+        """)
+        
+        if guc == "Zayıf":
+            self.progress.setValue(33)
+        elif guc == "Orta":
+            self.progress.setValue(66)
+        else:
+            self.progress.setValue(100)
+        
+        # Etiketleri güncelle
+        self.guc_label.setText(f"Şifre Gücü: {guc}")
+        self.guc_label.setStyleSheet(f"""
+            color: {guc_renk[guc]};
+            font-family: 'Segoe UI';
+            font-size: 14px;
+            font-weight: bold;
+        """)
+        
+        if guc == "Güçlü":
+            self.bilgi_label.setText("✓ Bu şifre güvenlik standartlarını karşılıyor.")
+            self.bilgi_label.setStyleSheet("""
+                color: #2ECC71;
+                font-family: 'Segoe UI';
+                font-size: 13px;
+            """)
+        else:
+            self.bilgi_label.setText("Öneriler:\n• " + "\n• ".join(geri_bildirim))
+            self.bilgi_label.setStyleSheet("""
+                color: rgba(255, 255, 255, 0.7);
+                font-family: 'Segoe UI';
+                font-size: 13px;
+            """)
+
+    def sifreyi_kaydet(self):
+        """Yeni şifreyi kaydet"""
+        if self.yeni_sifre.text() != self.sifre_tekrar.text():
+            QMessageBox.warning(self, "Hata", "Şifreler eşleşmiyor!")
+            return
+            
+        guc, _ = self.ana_pencere.yonetici.sifre_gucunu_degerlendir(self.yeni_sifre.text())
+        if guc == "Zayıf":
+            cevap = QMessageBox.question(
+                self,
+                "Zayıf Şifre",
+                "Bu şifre zayıf olarak değerlendirildi. Yine de kaydetmek istiyor musunuz?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if cevap == QMessageBox.No:
+                return
+        
+        try:
+            # Şifreyi güncelle
+            if self.ana_pencere.yonetici.kullanici_sifre_guncelle(self.kullanici_adi, self.yeni_sifre.text()):
+                QMessageBox.information(self, "Başarılı", "Şifreniz başarıyla güncellendi!")
+                self.accept()
+            else:
+                QMessageBox.warning(self, "Hata", "Şifre güncellenemedi!")
+        except Exception as e:
+            QMessageBox.warning(self, "Hata", f"Şifre güncellenirken bir hata oluştu: {str(e)}")
+
 def main():
     app = QApplication(sys.argv)
+    
+    # Uygulama ikonu ayarla
+    app.setWindowIcon(QIcon("assets/logo.png"))
+    
+    # Uygulama stili
+    app.setStyle("Fusion")
+    
+    # Koyu tema
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(26, 27, 40))
+    palette.setColor(QPalette.WindowText, Qt.white)
+    palette.setColor(QPalette.Base, QColor(15, 15, 25))
+    palette.setColor(QPalette.AlternateBase, QColor(27, 28, 40))
+    palette.setColor(QPalette.ToolTipBase, Qt.white)
+    palette.setColor(QPalette.ToolTipText, Qt.white)
+    palette.setColor(QPalette.Text, Qt.white)
+    palette.setColor(QPalette.Button, QColor(27, 28, 40))
+    palette.setColor(QPalette.ButtonText, Qt.white)
+    palette.setColor(QPalette.BrightText, Qt.red)
+    palette.setColor(QPalette.Link, QColor(42, 130, 218))
+    palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+    palette.setColor(QPalette.HighlightedText, Qt.black)
+    app.setPalette(palette)
+    
     pencere = AnaPencere()
     pencere.show()
     sys.exit(app.exec_())

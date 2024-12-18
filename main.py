@@ -5,6 +5,10 @@ import re
 from datetime import datetime, timedelta
 from veritabani import VeritabaniYoneticisi
 import uuid
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import random
 
 class SifreYoneticisi:
     def __init__(self):
@@ -13,6 +17,12 @@ class SifreYoneticisi:
         self.mevcut_kullanici = None
         self.maksimum_giris_denemesi = 3
         self.kilit_suresi_dakika = 30
+        self.email_ayarlari = {
+            'smtp_sunucu': 'smtp.gmail.com',
+            'smtp_port': 587,
+            'gonderen_email': 'mustafa44fbfb@gmail.com',
+            'gonderen_sifre': 'mcwt szgs kefs jznq'  # Gmail uygulama şifresi
+        }
 
     def sifre_gucunu_degerlendir(self, sifre: str) -> tuple:
         puan = 0
@@ -67,26 +77,47 @@ class SifreYoneticisi:
                 return sifre
 
     def kullanici_kayit(self, kullanici_adi: str, sifre: str, email: str) -> bool:
+        """Yeni kullanıcı kaydı"""
         try:
+            # Bağlantıyı kontrol et
+            self.vt.baglanti_kontrol()
+            
+            # Transaction başlat
+            self.vt.imlec.execute("BEGIN")
+            
+            # Kullanıcıyı kaydet
             sifre_hash = hashlib.sha256(sifre.encode()).hexdigest()
-            sorgu = """
-            INSERT INTO kullanicilar (kullanici_adi, sifre_hash, email)
-            VALUES (%s, %s, %s)
-            """
-            self.vt.imlec.execute(sorgu, (kullanici_adi, sifre_hash, email))
+            self.vt.imlec.execute("""
+                INSERT INTO kullanicilar (kullanici_adi, sifre_hash, email)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            """, (kullanici_adi, sifre_hash, email))
+            
+            # Transaction'ı tamamla
             self.vt.baglanti.commit()
             return True
+            
         except Exception as e:
             print(f"Kayıt hatası: {e}")
+            self.vt.baglanti.rollback()
             return False
 
     def kullanici_giris(self, kullanici_adi: str, sifre: str) -> bool:
-        sonuc = self.vt.kullanici_dogrula(kullanici_adi, sifre)
-        if sonuc:
-            self.mevcut_kullanici = sonuc  # kullanıcı ID'si
-            print(f"Giriş yapıldı. Kullanıcı ID: {self.mevcut_kullanici}")  # Debug için
-            return True
-        return False
+        try:
+            print(f"Giriş denemesi - Kullanıcı: {kullanici_adi}")
+            sonuc = self.vt.kullanici_dogrula(kullanici_adi, sifre)
+            
+            if sonuc:
+                self.mevcut_kullanici = sonuc
+                print(f"Giriş başarılı - Kullanıcı ID: {self.mevcut_kullanici}")
+                return True
+            
+            print("Giriş başarısız - Kullanıcı doğrulanamadı")
+            return False
+            
+        except Exception as e:
+            print(f"Giriş hatası: {e}")
+            return False
 
     def kullanici_cikis(self):
         self.mevcut_kullanici = None
@@ -201,4 +232,219 @@ class SifreYoneticisi:
             return self.vt.sifre_sil(sifre_id, self.mevcut_kullanici)
         except Exception as e:
             print(f"Şifre silme hatası: {e}")
+            return False
+
+    def kullanici_bul(self, kullanici_veya_email: str) -> int:
+        """Kullanıcı adı veya email ile kullanıcıyı bul"""
+        try:
+            self.vt.imlec.execute("""
+                SELECT id FROM kullanicilar 
+                WHERE kullanici_adi = %s OR email = %s
+            """, (kullanici_veya_email, kullanici_veya_email))
+            
+            sonuc = self.vt.imlec.fetchone()
+            return sonuc[0] if sonuc else None
+            
+        except Exception as e:
+            print(f"Kullanıcı arama hatası: {e}")
+            return None
+
+    def guvenlik_sorularini_getir(self, kullanici_id: int) -> list:
+        """Kullanıcının güvenlik sorularını getir"""
+        try:
+            self.vt.imlec.execute("""
+                SELECT soru_1, soru_2, soru_3, soru_4, soru_5, kritik_sorular
+                FROM guvenlik_sorulari 
+                WHERE kullanici_id = %s
+            """, (kullanici_id,))
+            
+            sonuc = self.vt.imlec.fetchone()
+            if not sonuc:
+                return []
+                
+            sorular = list(sonuc[:5])  # İlk 5 eleman sorular
+            kritik_sorular = sonuc[5]  # Son eleman kritik soru indeksleri
+            
+            # Kritik soruları işaretle
+            for i in range(len(sorular)):
+                if i + 1 in kritik_sorular:
+                    sorular[i] = f"[KRİTİK] {sorular[i]}"
+                    
+            return sorular
+            
+        except Exception as e:
+            print(f"Güvenlik soruları getirme hatası: {e}")
+            return []
+
+    def guvenlik_cevaplarini_kontrol_et(self, kullanici_id: int, cevaplar: list) -> bool:
+        """Güvenlik sorularının cevaplarını kontrol et"""
+        try:
+            self.vt.imlec.execute("""
+                SELECT cevap_1, cevap_2, cevap_3, cevap_4, cevap_5, kritik_sorular
+                FROM guvenlik_sorulari 
+                WHERE kullanici_id = %s
+            """, (kullanici_id,))
+            
+            sonuc = self.vt.imlec.fetchone()
+            if not sonuc:
+                return False
+                
+            dogru_cevaplar = list(sonuc[:5])
+            kritik_sorular = sonuc[5]
+            
+            # Kritik soruların doğruluğunu kontrol et
+            kritik_dogru = 0
+            for i in range(len(cevaplar)):
+                if i + 1 in kritik_sorular and cevaplar[i].lower() == dogru_cevaplar[i].lower():
+                    kritik_dogru += 1
+            
+            # En az 2 kritik soru doğru cevaplanmalı
+            return kritik_dogru >= 2
+            
+        except Exception as e:
+            print(f"Güvenlik cevapları kontrol hatası: {e}")
+            return False
+
+    def sifre_sifirla(self, kullanici_id: int, yeni_sifre: str) -> bool:
+        """Kullanıcının şifresini sıfırla"""
+        try:
+            sifre_hash = hashlib.sha256(yeni_sifre.encode()).hexdigest()
+            
+            self.vt.imlec.execute("""
+                UPDATE kullanicilar 
+                SET sifre_hash = %s,
+                    basarisiz_giris_sayisi = 0,
+                    hesap_kilitli = FALSE,
+                    kilit_bitis_tarihi = NULL
+                WHERE id = %s
+            """, (sifre_hash, kullanici_id))
+            
+            self.vt.baglanti.commit()
+            return True
+            
+        except Exception as e:
+            print(f"Şifre sıfırlama hatası: {e}")
+            self.vt.baglanti.rollback()
+            return False
+
+    def sifirlama_kodu_gonder(self, email: str) -> tuple:
+        """Kullanıcıya şifre sıfırlama kodu gönderir"""
+        try:
+            # Kullanıcıyı e-posta ile bul
+            self.vt.imlec.execute("""
+                SELECT id, kullanici_adi FROM kullanicilar 
+                WHERE email = %s
+            """, (email,))
+            
+            kullanici = self.vt.imlec.fetchone()
+            if not kullanici:
+                return False, "Bu e-posta adresi ile kayıtlı kullanıcı bulunamadı."
+            
+            # Rastgele 6 haneli kod oluştur
+            kod = ''.join(random.choices(string.digits, k=6))
+            
+            # Kodu veritabanına kaydet
+            self.vt.imlec.execute("""
+                UPDATE kullanicilar 
+                SET sifirlama_kodu = %s,
+                    sifirlama_kodu_son_kullanma = NOW() + INTERVAL '15 minutes'
+                WHERE id = %s
+            """, (kod, kullanici[0]))
+            
+            self.vt.baglanti.commit()
+            
+            # E-posta gönder
+            mesaj = MIMEMultipart()
+            mesaj['From'] = self.email_ayarlari['gonderen_email']
+            mesaj['To'] = email
+            mesaj['Subject'] = 'Lockly - Şifre Sıfırlama Kodu'
+            
+            body = f"""
+            Merhaba {kullanici[1]},
+            
+            Şifre sıfırlama talebiniz için doğrulama kodunuz: {kod}
+            
+            Bu kod 15 dakika süreyle geçerlidir.
+            
+            Eğer bu talebi siz yapmadıysanız, lütfen bu e-postayı dikkate almayın.
+            
+            Saygılarımızla,
+            Lockly Ekibi
+            """
+            
+            mesaj.attach(MIMEText(body, 'plain'))
+            
+            # SMTP bağlantısı
+            with smtplib.SMTP(self.email_ayarlari['smtp_sunucu'], 
+                            self.email_ayarlari['smtp_port']) as server:
+                server.starttls()
+                server.login(self.email_ayarlari['gonderen_email'],
+                           self.email_ayarlari['gonderen_sifre'])
+                server.send_message(mesaj)
+            
+            return True, "Şifre sıfırlama kodu e-posta adresinize gönderildi."
+            
+        except Exception as e:
+            print(f"E-posta gönderme hatası: {e}")
+            return False, "E-posta gönderilirken bir hata oluştu."
+
+    def sifirlama_kodunu_dogrula(self, email: str, kod: str) -> bool:
+        """Şifre sıfırlama kodunu doğrular"""
+        try:
+            self.vt.imlec.execute("""
+                SELECT id FROM kullanicilar 
+                WHERE email = %s 
+                AND sifirlama_kodu = %s
+                AND sifirlama_kodu_son_kullanma > NOW()
+            """, (email, kod))
+            
+            return bool(self.vt.imlec.fetchone())
+            
+        except Exception as e:
+            print(f"Kod doğrulama hatası: {e}")
+            return False
+
+    def kullanici_eposta_getir(self, kullanici_adi):
+        """Kullanıcı adına ait e-posta adresini getir"""
+        return self.vt.kullanici_eposta_getir(kullanici_adi)
+        
+    def dogrulama_kodu_olustur(self, kullanici_adi):
+        """Doğrulama kodu oluştur ve sakla"""
+        return self.vt.dogrulama_kodu_olustur(kullanici_adi)
+        
+    def dogrulama_kodu_gonder(self, email, kod):
+        """E-posta ile doğrulama kodunu gönder"""
+        return self.vt.dogrulama_kodu_gonder(email, kod)
+
+    def dogrulama_kodu_kontrol_et(self, kullanici_adi, kod):
+        """Doğrulama kodunu kontrol et"""
+        return self.vt.dogrulama_kodu_kontrol_et(kullanici_adi, kod)
+
+    def kullanici_sifre_guncelle(self, kullanici_adi: str, yeni_sifre: str) -> bool:
+        """Kullanıcının şifresini güncelle"""
+        try:
+            # Şifreyi hashle
+            sifre_hash = hashlib.sha256(yeni_sifre.encode()).hexdigest()
+            
+            # Şifreyi güncelle
+            self.vt.imlec.execute("""
+                UPDATE kullanicilar 
+                SET sifre_hash = %s,
+                    basarisiz_giris_sayisi = 0,
+                    hesap_kilitli = FALSE,
+                    kilit_bitis_tarihi = NULL
+                WHERE kullanici_adi = %s
+                RETURNING id
+            """, (sifre_hash, kullanici_adi))
+            
+            sonuc = self.vt.imlec.fetchone()
+            if not sonuc:
+                return False
+            
+            self.vt.baglanti.commit()
+            return True
+            
+        except Exception as e:
+            print(f"Şifre güncelleme hatası: {e}")
+            self.vt.baglanti.rollback()
             return False
